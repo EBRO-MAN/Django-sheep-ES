@@ -2,11 +2,66 @@
 
 {% block content %}
 
-<div class="col-md-6 offset-md-3">
+
 
 {% if user.is_authenticated %}
 
-<h1>Hello World!</h1>
+<h1>Sheeps available in folk</h1>
+
+<table class = "table table-striped table-hover table-bordered">
+  <thead class="table-dark">
+    <tr>
+      <th scope="col">Ear Tag</th>
+      <th scope="col">Breed</th>
+      <th scope="col">Breed Level</th>
+      <th scope="col">Sex</th>
+      <th scope="col">Type</th>
+      <th scope="col">Date of Birth</th>
+      <th scope="col">Birth Weight</th>
+      <th scope="col">Separation Date</th>
+      <th scope="col">Separation Weight</th>
+      <th scope="col">Parent Ewe</th>
+      <th scope="col">Parent Ram</th>
+      <th scope="col">Is Healthy</th>
+      <th scope="col">Health Notes</th>
+      <th scope="col">Flagged for Culling</th>
+      <th scope="col">Culling Reason</th>
+      <th scope="col">Created at</th>
+      <th scope="col">Updated at</th>
+    </tr>
+  </thead>
+  <tbody>
+    
+{% if sheeps %}
+    {% for sheep in sheeps %}
+      <tr>
+        <td>{{ sheep.ear_tag_number }} </td>
+        <td>{{ sheep.breed }} </td>
+        <td>{{ sheep.breed_level }} </td>
+        <td>{{ sheep.sex }} </td>
+        <td>{{ sheep.type }} </td>
+        <td>{{ sheep.date_of_birth }} </td>
+        <td>{{ sheep.birth_weight }} </td>
+        <td>{{ sheep.separation_date }} </td>
+        <td>{{ sheep.separation_weight }} </td>
+        <td>{{ sheep.parent_ewe }} </td>
+        <td>{{ sheep.parent_ram }} </td>
+        <td>{{ sheep.is_healthy }} </td>
+        <td>{{ sheep.health_notes }} </td>
+        <td>{{ sheep.flagged_for_culling }} </td>
+        <td>{{ sheep.culling_reason }} </td>
+        <td>{{ sheep.created_at }} </td>
+        <td>{{ sheep.updated_at }} </td>
+      </tr>
+
+    {% endfor%}
+
+{% endif %}
+    </tr>
+  </tbody>
+</table>
+
+
 
 {% else %}
 
@@ -28,7 +83,7 @@
   <button type="submit" class="btn btn-secondary">Login</button>
 </form>
 </form>
-</div>
+
 
 {% endif %}
 {% endblock %}
