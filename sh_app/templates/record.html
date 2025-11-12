@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class="card">
+    <div class="card-header"> <strong>
+       {{sheep_record.ear_tag_number }} </strong> <em>
+       {{ sheep_record.breed }} </em><strong>
+       {{ sheep_record.breed_level }}&percnt; </strong> <em>
+       {{ sheep_record.sex }}</em>
+    </div>
+    <div class="card-body">
+        <p class="card-text">
+            <strong>Type: </strong>{{ sheep_record.type }} <br>
+            <strong>Date of birth: </strong>{{ sheep_record.date_of_birth }} <br>
+            <strong>Birt weight: </strong>{{ sheep_record.birth_weight }} <br>
+            <strong>Separation date: </strong>{{ sheep_record.separation_date }} <br>
+            <strong>Separation weight: </strong>{{ sheep_record.separation_weight }} <br>
+            <strong>Parent ewe: </strong>{{ sheep_record.parent_ewe }} <br>
+            <strong>Parent ram: </strong>{{ sheep_record.parent_ram }} <br>
+            <strong>Health status: </strong>{{ sheep_record.is_healthy }} <br>
+            <strong>health notes: </strong>{{ sheep_record.health_notes }} <br>
+            <strong>flag for culling: </strong>{{ sheep_record.flagged_for_culling }} <br>
+            <strong>Culling reason: </strong>{{ sheep_record.culling_reason }} <br>
+            <strong>Created date: </strong>{{ sheep_record.created_at }} <br>
+            <strong>Updated date: </strong>{{ sheep_record.updated_at }} <br>
+        </p>
+        
+    </div>
+</div>
+
+<br><br>
+
+
+<a href="{% url 'home' %}" class="btn btn-secondary">Back</a>
+<a href="{% url 'delete_record' sheep_record.ear_tag_number%}" class="btn btn-danger">Delete</a>
+<a href="{% url 'update_record' sheep_record.ear_tag_number%}" class="btn btn-secondary">Update</a>
+
+      
+{% endblock %}
+
+

@@ -35,9 +35,9 @@
 {% if sheeps %}
     {% for sheep in sheeps %}
       <tr>
-        <td>{{ sheep.ear_tag_number }} </td>
+        <td> <a href="{% url 'record' sheep.ear_tag_number %}"> {{sheep.ear_tag_number }}</a> </td>
         <td>{{ sheep.breed }} </td>
-        <td>{{ sheep.breed_level }} </td>
+        <td>{{ sheep.breed_level }}&percnt; </td>
         <td>{{ sheep.sex }} </td>
         <td>{{ sheep.type }} </td>
         <td>{{ sheep.date_of_birth }} </td>
@@ -61,10 +61,8 @@
   </tbody>
 </table>
 
-
-
 {% else %}
-
+<div class="col-md-6 offset-md-3">
 <h1>Login</h1>
 <br/>
 <form method="POST" action="{% url 'home'%}">
@@ -83,7 +81,7 @@
   <button type="submit" class="btn btn-secondary">Login</button>
 </form>
 </form>
-
+</div>
 
 {% endif %}
 {% endblock %}
