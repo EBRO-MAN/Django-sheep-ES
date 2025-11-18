@@ -71,3 +71,62 @@ class Sheep(models.Model):
     
     def __str__(self):
         return f"{self.ear_tag_number} - {self.breed} - {self.type}"
+    
+
+
+class BreedingCycle(models.Model):
+    STATUS_CHOICES = [
+        ('PLANNED', 'Planned'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+    
+    cycle_id = models.CharField(max_length=50, unique=True, primary_key=True)
+    ewe = models.ForeignKey(
+        'Sheep', 
+        on_delete=models.CASCADE, 
+        related_name='breeding_cycles_as_ewe',
+        limit_choices_to={'sex': 'FEMALE', 'is_healthy': True, 'type__in': ['EWE', 'GIMMER']}
+    )
+    ram = models.ForeignKey(
+        'Sheep', 
+        on_delete=models.CASCADE, 
+        related_name='breeding_cycles_as_ram',
+        limit_choices_to={'sex': 'MALE', 'is_healthy': True, 'type__in': ['RAM', 'YOUNG_RAM']}
+    )
+    start_date = models.DateField()
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='PLANNED')
+    actual_birth_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # created_by = models.ForeignKey('User', on_delete=models.CASCADE)
+    
+    @property
+    def end_date(self):
+        from datetime import timedelta
+        return self.start_date + timedelta(days=51)
+    
+    @property
+    def expected_birth_date(self):
+        from datetime import timedelta
+        return self.start_date + timedelta(days=155)
+    
+    def clean(self):
+        from .services import check_for_inbreeding, check_ram_capacity
+        
+        # Inbreeding prevention
+        if not check_for_inbreeding(self.ewe, self.ram):
+            raise ValidationError("Breeding cycle violates inbreeding prevention rules")
+        
+        # Ram capacity check
+        if not check_ram_capacity(self.ram, self.start_date):
+            raise ValidationError("Ram has exceeded breeding capacity for this season")
+    
+    def save(self, *args, **kwargs):
+        if not self.cycle_id:
+            self.cycle_id = f"BC_{self.ewe.ear_tag_number}_{self.ram.ear_tag_number}_{self.start_date}"
+        self.full_clean()
+        super().save(*args, **kwargs)
+    
+    # def __str__(self):
+    #     return f"{self.cycle_id} - {self.ewe.ear_tag_number} × {self.ram.ear_tag_number}"

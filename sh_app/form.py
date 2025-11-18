@@ -3,21 +3,78 @@ from .models import Sheep
 
 # Create Add Sheep Record
 class AddRecordForm(forms.ModelForm):
-    ear_tag_number = forms.CharField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Ear tag", "class": "form-control"}), label="")
-    breed = forms.CharField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Breed", "class": "form-control"}), label="")
-    breed_level =forms.FloatField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Breed level", "class": "form-control"}), label="")
-    sex = forms.CharField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Sex", "class": "form-control"}), label="")
-    type = forms.CharField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Type", "class": "form-control"}), label="")
-    date_of_birth = forms.DateField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Date of birth", "class": "form-control"}), label="")
-    birth_weight =forms.FloatField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Birth weight", "class": "form-control"}), label="")
-    separation_date = forms.DateField( widget=forms.widgets.TextInput(attrs={"placeholder": "Separation date", "class": "form-control"}), label="")
-    separation_weight = forms.FloatField( widget=forms.widgets.TextInput(attrs={"placeholder": "Separation weight", "class": "form-control"}), label="")
+    ear_tag_number = forms.CharField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Ear tag", "class": "form-control"}), label="Ear Tag Number")
+    # breed = forms.ChoiceField(required=True, widget=forms.widgets.Select(attrs={"placeholder": "Breed", "class": "form-control"}), label="")
+    breed = forms.ChoiceField(choices=Sheep.BREED_CHOICES, widget=forms.Select(attrs={"class": "form-control"}), label="Breed")
+    breed_level =forms.FloatField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Breed level", "class": "form-control"}), label="Breed Level (%)")
+    sex = forms.ChoiceField(choices=Sheep.SEX_CHOICES, widget=forms.Select(attrs={"class": "form-control"}), label="Sex")
+    type = forms.ChoiceField(choices=Sheep.TYPE_CHOICES, widget=forms.Select(attrs={"class": "form-control"}), label="Sheep Type")
+    # date_of_birth = forms.DateField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Date of birth", "class": "form-control"}), label="")
+    # date_of_birth = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}), label="Date of Birth")
+    date_of_birth = forms.DateField(
+    label="Date of Birth",
+    required=False,
+    widget=forms.DateInput(attrs={
+        "type": "date",
+        "class": "form-control",
+        "placeholder": "mm/dd/yyyy"
+    })
+)
+
+    birth_weight =forms.FloatField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Birth weight", "class": "form-control"}), label="Birth Weight (kg)")
+    # separation_date = forms.DateField( widget=forms.widgets.TextInput(attrs={"placeholder": "Separation date", "class": "form-control"}), label="")
+    # separation_date = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}), label="Separation Date")
+    separation_date = forms.DateField(
+    label="Separation Date",
+    required=False,
+    widget=forms.DateInput(attrs={
+        "type": "date",
+        "class": "form-control",
+        "placeholder": "mm/dd/yyyy"
+    })
+)
+
+    # separation_weight = forms.FloatField( widget=forms.widgets.TextInput(attrs={"placeholder": "Separation weight", "class": "form-control"}), label="Separation Weight (kg)")
+    separation_weight = forms.FloatField(
+    label="Separation Weight (kg)",
+    required=False,
+    widget=forms.NumberInput(attrs={"placeholder": "Separation weight", "class": "form-control"})
+)
+
     # parent_ewe = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Parent ewe", "class": "form-control"}), label="")
+    parent_ewe = forms.ModelChoiceField(
+    queryset=Sheep.objects.filter(type='EWE'),
+    required=False,
+    widget=forms.Select(attrs={"class": "form-control"}),
+    label="Parent Ewe (Mother)"
+)
+
     # parent_ram = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Parent ram", "class": "form-control"}), label="")
-    # is_healthy =forms.BooleanField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Health status", "class": "form-control"}), label="")
-    # health_notes = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Health note", "class": "form-control"}), label="")
-    # flagged_for_culling = forms.BooleanField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Flag for culling", "class": "form-control"}), label="")
-    # culling_reason = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Culling reason", "class": "form-control"}), label="")
+    parent_ram = forms.ModelChoiceField(
+    queryset=Sheep.objects.filter(type='RAM'),
+    required=False,
+    widget=forms.Select(attrs={"class": "form-control"}),
+    label="Parent Ram (Father)"
+)
+
+    # is_healthy = forms.BooleanField(required=False, widget=forms.CheckboxInput(attrs={"class": "form-check-input"}), label="Is Healthy")
+    is_healthy = forms.BooleanField(
+    label="Is the Sheep Healthy?",
+    required=False,
+    widget=forms.CheckboxInput(attrs={"class": "form-check-input"})
+)
+
+
+    health_notes = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Health note", "class": "form-control"}), label="Health Notes")
+    # flagged_for_culling = forms.BooleanField(required=False, widget=forms.CheckboxInput(attrs={"class": "form-check-input"}), label="Flagged for Culling")
+    flagged_for_culling = forms.BooleanField(
+    label="Flag for Culling?",
+    required=False,
+    widget=forms.CheckboxInput(attrs={"class": "form-check-input"})
+)
+
+
+    culling_reason = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Culling reason", "class": "form-control"}), label="Culling Reason")
 
     class Meta:
         model = Sheep

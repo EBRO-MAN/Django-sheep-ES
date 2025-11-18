@@ -9,4 +9,8 @@ urlpatterns = [
     path('delete_record/<int:pk>', views.delete_record, name='delete_record'),
     path('add_record/', views.add_record, name='add_record'),
     path('update_record/<int:pk>', views.update_record, name='update_record'),
+    
+    path('selection/', views.breeding_selection, name='breeding_selection'),
+    # path('create-cycle/', views.create_breeding_cycle, name='create_breeding_cycle'),
+    # path('compatible-ewes/<str:ram_id>/', views.get_compatible_ewes_ajax, name='get_compatible_ewes'),
 ]

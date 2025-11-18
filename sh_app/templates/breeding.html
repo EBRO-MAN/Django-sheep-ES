@@ -1,0 +1,781 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Breeding Selection System</title>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
+    <style>
+        .breeding-container {
+            background-color: #f8f9fa;
+            min-height: 100vh;
+            padding: 20px 0;
+        }
+        
+        .rams-scroll-container {
+            display: flex;
+            overflow-x: auto;
+            gap: 15px;
+            padding: 10px 0;
+            scrollbar-width: thin;
+        }
+        
+        .ram-card, .ewe-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .ram-card:hover, .ewe-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .ram-card.selected {
+            border-color: #0d6efd !important;
+            background-color: #e7f1ff;
+        }
+        
+        .breed-badge {
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        
+        .breed-local { background-color: #198754; }
+        .breed-pa { background-color: #dc3545; }
+        .breed-pd { background-color: #6f42c1; }
+        .breed-ac { background-color: #fd7e14; }
+        .breed-dc { background-color: #20c997; }
+        
+        .ewes-sidebar {
+            height: 70vh;
+            overflow-y: auto;
+        }
+        
+        .compatible-ewes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 15px;
+            max-height: 50vh;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        
+        .compatible-ewe-card {
+            transition: all 0.3s ease;
+        }
+        
+        .compatible-ewe-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .selected-ram-display {
+            min-height: 200px;
+        }
+        
+        .sheep-details {
+            font-size: 0.9rem;
+        }
+        
+        /* Custom scrollbar */
+        .rams-scroll-container::-webkit-scrollbar,
+        .ewes-sidebar::-webkit-scrollbar,
+        .compatible-ewes-grid::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        .rams-scroll-container::-webkit-scrollbar-track,
+        .ewes-sidebar::-webkit-scrollbar-track,
+        .compatible-ewes-grid::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        .rams-scroll-container::-webkit-scrollbar-thumb,
+        .ewes-sidebar::-webkit-scrollbar-thumb,
+        .compatible-ewes-grid::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+        
+        .rams-scroll-container::-webkit-scrollbar-thumb:hover,
+        .ewes-sidebar::-webkit-scrollbar-thumb:hover,
+        .compatible-ewes-grid::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+        
+        @media (max-width: 768px) {
+            .main-layout {
+                flex-direction: column;
+            }
+            
+            .ewes-sidebar {
+                height: auto;
+                max-height: 40vh;
+            }
+            
+            .compatible-ewes-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body class="breeding-container">
+    <div class="container-fluid">
+        <!-- Header Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-body text-center">
+                        <h1 class="card-title text-primary">
+                            <i class="bi bi-gender-ambiguous"></i>
+                            Sheep Breeding Selection System
+                        </h1>
+                        <p class="card-text text-muted">
+                            Select a ram to see compatible ewes for breeding. The system automatically filters out close family members.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Available Rams Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-gender-male"></i>
+                            Available Rams
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="rams-scroll-container">
+                            {% for ram in rams %}
+                            <div class="card ram-card {% if selected_ram and selected_ram.ear_tag_number == ram.ear_tag_number %}selected border-primary{% else %}border-light{% endif %}" 
+                                 style="min-width: 220px;"
+                                 data-ram-id="{{ ram.ear_tag_number }}">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <h6 class="card-title text-truncate">{{ ram.ear_tag_number }}</h6>
+                                        <span class="badge breed-badge breed-{{ ram.breed|lower }}">{{ ram.breed }}</span>
+                                    </div>
+                                    <div class="sheep-details">
+                                        <p class="card-text mb-1">
+                                            <small class="text-muted">Level: <strong>{{ ram.breed_level }}%</strong></small>
+                                        </p>
+                                        <p class="card-text mb-1">
+                                            <small class="text-muted">Type: {{ ram.type }}</small>
+                                        </p>
+                                        <p class="card-text mb-0">
+                                            <small class="text-muted">
+                                                Age: 
+                                                {% if ram.date_of_birth %}
+                                                    {{ ram.date_of_birth|timesince }}
+                                                {% else %}
+                                                    Unknown
+                                                {% endif %}
+                                            </small>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <div class="text-center text-muted py-4 w-100">
+                                <i class="bi bi-exclamation-circle display-4"></i>
+                                <p class="mt-2">No available rams found</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+
+        <!-- Main Content Area -->
+        <div class="row">
+            <!-- Ewes Sidebar -->
+            <div class="col-lg-3 col-md-4 mb-4">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-danger text-white">
+                        <h5 class="card-title mb-0">
+                            <i class="bi bi-gender-female"></i>
+                            All Available Ewes
+                        </h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="ewes-sidebar">
+                            {% for ewe in ewes %}
+                            <div class="card ewe-card border-light m-2" data-ewe-id="{{ ewe.ear_tag_number }}">
+                                <div class="card-body py-2">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <h6 class="card-title mb-0 small">{{ ewe.ear_tag_number }}</h6>
+                                        <span class="badge breed-badge breed-{{ ewe.breed|lower }}">{{ ewe.breed }}</span>
+                                    </div>
+                                    <div class="sheep-details">
+                                        <p class="card-text mb-0 small text-muted">
+                                            Level: {{ ewe.breed_level }}% | Type: {{ ewe.type }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-exclamation-circle"></i>
+                                <p class="mt-2">No available ewes found</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Breeding Area -->
+            <div class="col-lg-9 col-md-8">
+                <div class="row h-100">
+                    <!-- Selected Ram Display -->
+                    <div class="col-12 mb-4">
+                        <div class="card shadow-sm">
+                            <div class="card-header bg-success text-white">
+                                <h5 class="card-title mb-0">
+                                    <i class="bi bi-star-fill"></i>
+                                    Selected Ram
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="selected-ram-display d-flex align-items-center justify-content-center">
+                                    {% if selected_ram %}
+                                    <div class="row w-100">
+                                        <div class="col-md-8">
+                                            <div class="d-flex align-items-center mb-3">
+                                                <h4 class="text-success mb-0">{{ selected_ram.ear_tag_number }}</h4>
+                                                <span class="badge breed-badge breed-{{ selected_ram.breed|lower }} ms-2 fs-6">{{ selected_ram.breed }}</span>
+                                            </div>
+                                            <div class="row sheep-details">
+                                                <div class="col-sm-6">
+                                                    <p><strong>Breed Level:</strong> {{ selected_ram.breed_level }}%</p>
+                                                    <p><strong>Type:</strong> {{ selected_ram.type }}</p>
+                                                </div>
+                                                <div class="col-sm-6">
+                                                    <p><strong>Age:</strong> 
+                                                        {% if selected_ram.date_of_birth %}
+                                                            {{ selected_ram.date_of_birth|timesince }}
+                                                        {% else %}
+                                                            Unknown
+                                                        {% endif %}
+                                                    </p>
+                                                    {% if selected_ram.parent_ewe or selected_ram.parent_ram %}
+                                                    <p><strong>Parents:</strong><br>
+                                                        <small>
+                                                            {{ selected_ram.parent_ewe.ear_tag_number|default:"Unknown" }} × 
+                                                            {{ selected_ram.parent_ram.ear_tag_number|default:"Unknown" }}
+                                                        </small>
+                                                    </p>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4 text-center">
+                                            <div class="bg-light rounded p-3">
+                                                <i class="bi bi-gender-male display-4 text-success"></i>
+                                                <p class="mt-2 mb-0"><strong>Healthy</strong></p>
+                                                <small class="text-success">
+                                                    <i class="bi bi-check-circle-fill"></i>
+                                                    Available for breeding
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% else %}
+                                    <div class="text-center text-muted py-4">
+                                        <i class="bi bi-gender-male display-1"></i>
+                                        <h5 class="mt-3">No Ram Selected</h5>
+                                        <p>Please select a ram from the list above to see compatible ewes</p>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+<!-- Add this section after the Selected Ram Display -->
+{% if selected_ram and breed_restrictions %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-diagram-3"></i>
+                    Breed Compatibility Rules
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Breed Restrictions for {{ selected_ram.breed }} Ram:</h6>
+                        <p class="mb-2">This ram can only mate with:</p>
+                        <ul class="list-group">
+                            {% for breed in breed_restrictions %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                {{ breed }} breed
+                                <span class="badge bg-success rounded-pill">Allowed</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Breed Assignment Rules:</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Ewe Breed</th>
+                                        <th>Ram Breed</th>
+                                        <th>Lamb Breed</th>
+                                        <th>Breed Level</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>LOCAL</td>
+                                        <td>LOCAL</td>
+                                        <td>LOCAL</td>
+                                        <td>100%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>PA</td>
+                                        <td>LOCAL</td>
+                                        <td>AC</td>
+                                        <td>50%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>PD</td>
+                                        <td>LOCAL</td>
+                                        <td>DC</td>
+                                        <td>50%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>AC</td>
+                                        <td>PA</td>
+                                        <td>AC</td>
+                                        <td>Average</td>
+                                    </tr>
+                                    <tr>
+                                        <td>DC</td>
+                                        <td>PD</td>
+                                        <td>DC</td>
+                                        <td>Average</td>
+                                    </tr>
+                                    <tr>
+                                        <td>PA</td>
+                                        <td>PA</td>
+                                        <td>PA</td>
+                                        <td>100%</td>
+                                    </tr>
+                                    <tr>
+                                        <td>PD</td>
+                                        <td>PD</td>
+                                        <td>PD</td>
+                                        <td>100%</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+                    <!-- Compatible Ewes Section
+                    <div class="col-12">
+                        <div class="card shadow-sm">
+                            <div class="card-header bg-info text-white">
+                                <h5 class="card-title mb-0">
+                                    <i class="bi bi-heart-fill"></i>
+                                    Compatible Ewes (Non-Family Members)
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="compatible-ewes-grid">
+                                    {% if selected_ram %}
+                                        {% for ewe in compatible_ewes %}
+                                        <div class="card compatible-ewe-card border-info">
+                                            <div class="card-body">
+                                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                                    <h6 class="card-title">{{ ewe.ear_tag_number }}</h6>
+                                                    <span class="badge breed-badge breed-{{ ewe.breed|lower }}">{{ ewe.breed }}</span>
+                                                </div>
+                                                <div class="sheep-details mb-3">
+                                                    <p class="card-text mb-1"><strong>Level:</strong> {{ ewe.breed_level }}%</p>
+                                                    <p class="card-text mb-1"><strong>Type:</strong> {{ ewe.type }}</p>
+                                                    <p class="card-text mb-0">
+                                                        <strong>Age:</strong> 
+                                                        {% if ewe.date_of_birth %}
+                                                            {{ ewe.date_of_birth|timesince }}
+                                                        {% else %}
+                                                            Unknown
+                                                        {% endif %}
+                                                    </p>
+                                                </div>
+                                                <button class="btn btn-primary w-100 select-ewe-btn" 
+                                                        data-ewe-id="{{ ewe.ear_tag_number }}"
+                                                        data-ram-id="{{ selected_ram.ear_tag_number }}">
+                                                    <i class="bi bi-heart"></i>
+                                                    Select for Breeding
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {% empty %}
+                                        <div class="col-12 text-center text-muted py-5">
+                                            <i class="bi bi-people-x display-1"></i>
+                                            <h5 class="mt-3">No Compatible Ewes Found</h5>
+                                            <p>No ewes are available that meet the family relationship rules for the selected ram.</p>
+                                            <p class="small">This may be due to parent-child, sibling, or other close family relationships.</p>
+                                        </div>
+                                        {% endfor %}
+                                    {% else %}
+                                    <div class="col-12 text-center text-muted py-5">
+                                        <i class="bi bi-gender-female display-1"></i>
+                                        <h5 class="mt-3">Select a Ram First</h5>
+                                        <p>Choose a ram from the available rams list to see compatible ewes</p>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div> 
+
+    </div> -->
+    <!-- Update the compatible ewe cards to show breed prediction -->
+<div class="compatible-ewes-grid">
+    {% if selected_ram %}
+        {% for ewe in compatible_ewes %}
+        <div class="card compatible-ewe-card border-success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h6 class="card-title">{{ ewe.ear_tag_number }}</h6>
+                    <span class="badge breed-badge breed-{{ ewe.breed|lower }}">{{ ewe.breed }}</span>
+                </div>
+                
+                <div class="sheep-details mb-3">
+                    <p class="card-text mb-1"><strong>Level:</strong> {{ ewe.breed_level }}%</p>
+                    <p class="card-text mb-1"><strong>Type:</strong> {{ ewe.type }}</p>
+                    <p class="card-text mb-2">
+                        <strong>Age:</strong> 
+                        {% if ewe.date_of_birth %}
+                            {{ ewe.date_of_birth|timesince }}
+                        {% else %}
+                            Unknown
+                        {% endif %}
+                    </p>
+                    
+                    <!-- Breed Prediction -->
+                    {% with lamb_breed=ewe.predicted_lamb_breed lamb_level=ewe.predicted_lamb_level %}
+                    {% if lamb_breed %}
+                    <div class="alert alert-success py-2 mb-2">
+                        <small>
+                            <strong>Predicted Lamb:</strong><br>
+                            {{ lamb_breed }} ({{ lamb_level }}%)
+                        </small>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning py-2 mb-2">
+                        <small>
+                            <strong>Lamb Breed:</strong><br>
+                            Manual assignment required
+                        </small>
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+                </div>
+                
+                <button class="btn btn-success w-100 select-ewe-btn" 
+                        data-ewe-id="{{ ewe.ear_tag_number }}"
+                        data-ram-id="{{ selected_ram.ear_tag_number }}"
+                        data-ewe-breed="{{ ewe.breed }}"
+                        data-ram-breed="{{ selected_ram.breed }}">
+                    <i class="bi bi-heart"></i>
+                    Select for Breeding
+                </button>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12 text-center text-muted py-5">
+            <i class="bi bi-people-x display-1"></i>
+            <h5 class="mt-3">No Compatible Ewes Found</h5>
+            <p>No ewes meet both breed compatibility and family relationship rules.</p>
+            {% if selected_ram.breed == 'LOCAL' %}
+            <p class="small text-warning">Local rams can only breed with Local ewes.</p>
+            {% elif selected_ram.breed == 'PA' %}
+            <p class="small text-warning">PA rams can only breed with Local, PA, or AC ewes.</p>
+            {% elif selected_ram.breed == 'PD' %}
+            <p class="small text-warning">PD rams can only breed with Local, PD, or DC ewes.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="col-12 text-center text-muted py-5">
+        <i class="bi bi-gender-female display-1"></i>
+        <h5 class="mt-3">Select a Ram First</h5>
+        <p>Choose a ram from the available rams list to see compatible ewes</p>
+    </div>
+    {% endif %}
+</div>
+<!-- Add this section at the bottom of the main content, before the modals -->
+{% if incompatible_ewes_info and debug %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-bug"></i>
+                    Incompatible Ewes Debug Info
+                </h6>
+            </div>
+            <div class="card-body">
+                {% for info in incompatible_ewes_info %}
+                <div class="mb-2">
+                    <strong>{{ info.ewe }}</strong>: 
+                    {{ info.relationships|join:", " }}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+    <!-- Breeding Modal -->
+    <div class="modal fade" id="breedingModal" tabindex="-1" aria-labelledby="breedingModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title" id="breedingModalLabel">
+                        <i class="bi bi-hearts"></i>
+                        Create Breeding Cycle
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="breedingForm">
+                        <div class="mb-3">
+                            <label for="startDate" class="form-label">Breeding Start Date</label>
+                            <input type="date" class="form-control" id="startDate" name="startDate" required>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <h6 class="alert-heading">Selected Breeding Pair</h6>
+                            <p class="mb-0">
+                                <strong>Ewe:</strong> <span id="selectedEweId" class="badge bg-danger"></span>
+                                <strong class="ms-2">Ram:</strong> <span id="selectedRamId" class="badge bg-primary"></span>
+                            </p>
+                        </div>
+                        
+                        <div class="card">
+                            <div class="card-header bg-light">
+                                <h6 class="card-title mb-0">Calculated Dates</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>Breeding End Date:</strong><br>
+                                            <span id="endDate" class="text-primary fw-bold">-</span>
+                                        </p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><strong>Expected Birth Date:</strong><br>
+                                            <span id="expectedBirth" class="text-success fw-bold">-</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <small class="text-muted">
+                                    <i class="bi bi-info-circle"></i>
+                                    End date: Start date + 51 days | Birth date: Start date + 155 days
+                                </small>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" form="breedingForm" class="btn btn-success">
+                        <i class="bi bi-check-circle"></i>
+                        Create Breeding Cycle
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container for Messages -->
+    <div class="toast-container position-fixed top-0 end-0 p-3">
+        <!-- Toasts will be inserted here dynamically -->
+    </div>
+
+    <!-- Bootstrap & JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Elements
+            const ramCards = document.querySelectorAll('.ram-card');
+            const selectEweButtons = document.querySelectorAll('.select-ewe-btn');
+            const breedingModal = new bootstrap.Modal(document.getElementById('breedingModal'));
+            const breedingForm = document.getElementById('breedingForm');
+            const startDateInput = document.getElementById('startDate');
+            const endDateSpan = document.getElementById('endDate');
+            const expectedBirthSpan = document.getElementById('expectedBirth');
+            const toastContainer = document.querySelector('.toast-container');
+            
+            let selectedEweId = '';
+            let selectedRamId = '';
+
+            // Set minimum date to today
+            const today = new Date().toISOString().split('T')[0];
+            startDateInput.min = today;
+            startDateInput.value = today;
+
+            // Ram selection
+            ramCards.forEach(card => {
+                card.addEventListener('click', function() {
+                    const ramId = this.getAttribute('data-ram-id');
+                    window.location.href = `?ram_id=${ramId}`;
+                });
+            });
+
+            // Ewe selection for breeding
+            selectEweButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    selectedEweId = this.getAttribute('data-ewe-id');
+                    selectedRamId = this.getAttribute('data-ram-id');
+                    
+                    document.getElementById('selectedEweId').textContent = selectedEweId;
+                    document.getElementById('selectedRamId').textContent = selectedRamId;
+                    
+                    // Reset and show modal
+                    startDateInput.value = today;
+                    calculateDates();
+                    breedingModal.show();
+                });
+            });
+
+            // Date calculation
+            startDateInput.addEventListener('change', calculateDates);
+
+            function calculateDates() {
+                const startDate = new Date(startDateInput.value);
+                if (isNaN(startDate.getTime())) return;
+
+                // End date: start date + 51 days
+                const endDate = new Date(startDate);
+                endDate.setDate(endDate.getDate() + 51);
+                
+                // Expected birth: start date + 155 days
+                const expectedBirth = new Date(startDate);
+                expectedBirth.setDate(expectedBirth.getDate() + 155);
+
+                endDateSpan.textContent = endDate.toLocaleDateString();
+                expectedBirthSpan.textContent = expectedBirth.toLocaleDateString();
+            }
+
+            // Form submission
+            breedingForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const formData = {
+                    ewe_id: selectedEweId,
+                    ram_id: selectedRamId,
+                    start_date: startDateInput.value
+                };
+
+                fetch('/breeding/create-cycle/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify(formData)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        breedingModal.hide();
+                        // Refresh the page after 2 seconds to show updated data
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        showToast(data.message, 'danger');
+                    }
+                })
+                .catch(error => {
+                    showToast('An error occurred: ' + error, 'danger');
+                });
+            });
+
+            // Utility functions
+            function showToast(message, type) {
+                const toastEl = document.createElement('div');
+                toastEl.className = `toast align-items-center text-bg-${type} border-0`;
+                toastEl.setAttribute('role', 'alert');
+                toastEl.setAttribute('aria-live', 'assertive');
+                toastEl.setAttribute('aria-atomic', 'true');
+                
+                toastEl.innerHTML = `
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                `;
+                
+                toastContainer.appendChild(toastEl);
+                const toast = new bootstrap.Toast(toastEl);
+                toast.show();
+                
+                // Remove toast from DOM after it's hidden
+                toastEl.addEventListener('hidden.bs.toast', () => {
+                    toastEl.remove();
+                });
+            }
+
+            function getCookie(name) {
+                let cookieValue = null;
+                if (document.cookie && document.cookie !== '') {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                            cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                            break;
+                        }
+                    }
+                }
+                return cookieValue;
+            }
+
+            // Initial calculations
+            calculateDates();
+        });
+    </script>
+</body>
+</html>
+
+{% endblock %}
