@@ -7,177 +7,436 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Breeding Selection System</title>
+    <title>Sheep Breeding Selection System</title>
     
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
     
     <style>
-        .breeding-container {
-            background-color: #f8f9fa;
+        :root {
+            --primary: #4361ee;
+            --secondary: #3a0ca3;
+            --success: #4cc9f0;
+            --info: #4895ef;
+            --warning: #f72585;
+            --light: #f8f9fa;
+            --dark: #212529;
+            --gradient-primary: linear-gradient(135deg, #4361ee, #3a0ca3);
+            --gradient-secondary: linear-gradient(135deg, #4cc9f0, #4361ee);
+            --shadow: 0 5px 15px rgba(0,0,0,0.08);
+            --shadow-hover: 0 8px 25px rgba(0,0,0,0.12);
+            --border-radius: 12px;
+        }
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             min-height: 100vh;
-            padding: 20px 0;
+            color: #333;
         }
         
-        .rams-scroll-container {
-            display: flex;
-            overflow-x: auto;
-            gap: 15px;
-            padding: 10px 0;
-            scrollbar-width: thin;
+        .header-gradient {
+            background: var(--gradient-primary);
+            color: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
         }
         
-        .ram-card, .ewe-card {
+        .card-modern {
+            border: none;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
             transition: all 0.3s ease;
-            cursor: pointer;
+            overflow: hidden;
         }
         
-        .ram-card:hover, .ewe-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        .card-modern:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-hover);
         }
         
-        .ram-card.selected {
-            border-color: #0d6efd !important;
-            background-color: #e7f1ff;
-        }
-        
-        .breed-badge {
-            font-size: 0.75em;
+        .card-header-modern {
+            background: var(--gradient-secondary);
+            color: white;
+            border: none;
+            padding: 1rem 1.5rem;
             font-weight: 600;
         }
         
-        .breed-local { background-color: #198754; }
-        .breed-pa { background-color: #dc3545; }
-        .breed-pd { background-color: #6f42c1; }
-        .breed-ac { background-color: #fd7e14; }
-        .breed-dc { background-color: #20c997; }
-        
-        .ewes-sidebar {
-            height: 70vh;
-            overflow-y: auto;
+        .animal-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border-radius: var(--border-radius);
+            border: 2px solid transparent;
+            overflow: hidden;
         }
         
-        .compatible-ewes-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 15px;
-            max-height: 50vh;
+        .animal-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--shadow-hover);
+        }
+        
+        .animal-card.selected {
+            border-color: var(--primary);
+            background: linear-gradient(135deg, #e7f1ff, #d4e4ff);
+            position: relative;
+        }
+        
+        .animal-card.selected::after {
+            content: "✓ SELECTED";
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: var(--primary);
+            color: white;
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        
+        .breed-badge {
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 5px 10px;
+            border-radius: 20px;
+            color: white;
+        }
+        
+        .breed-local { background: linear-gradient(135deg, #198754, #20c997); }
+        .breed-pa { background: linear-gradient(135deg, #dc3545, #e63946); }
+        .breed-pd { background: linear-gradient(135deg, #6f42c1, #7209b7); }
+        .breed-ac { background: linear-gradient(135deg, #fd7e14, #f3722c); }
+        .breed-dc { background: linear-gradient(135deg, #20c997, #38b000); }
+        
+        .state-badge {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 15px;
+            margin-left: 5px;
+        }
+        
+        .state-silent { background: #6c757d; color: white; }
+        .state-flashing { background: #ffc107; color: black; }
+        .state-breeding { background: #dc3545; color: white; }
+        .state-pregnant { background: #198754; color: white; }
+        .state-birthing { background: #0dcaf0; color: black; }
+        
+        .progress-modern {
+            height: 8px;
+            border-radius: 10px;
+            background-color: #e9ecef;
+            overflow: hidden;
+        }
+        
+        .progress-bar-modern {
+            background: var(--gradient-primary);
+            border-radius: 10px;
+        }
+        
+        .scroll-container {
+            display: flex;
+            overflow-x: auto;
+            gap: 20px;
+            padding: 15px 0;
+            scrollbar-width: thin;
+        }
+        
+        .animal-sidebar {
+            height: 60vh;
             overflow-y: auto;
             padding: 10px;
         }
         
-        .compatible-ewe-card {
+        /* Filter Section Styles */
+        .filter-section {
+            background: white;
+            border-radius: var(--border-radius);
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow);
+        }
+        
+        .filter-title {
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--primary);
+        }
+        
+        .filter-badge {
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin: 0 5px 5px 0;
+        }
+        
+        .filter-badge:hover {
+            transform: scale(1.05);
+        }
+        
+        .filter-badge.active {
+            box-shadow: 0 0 0 2px white, 0 0 0 4px var(--primary);
+        }
+        
+        /* Action Buttons */
+        .action-buttons {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        
+        .action-btn {
+            border-radius: 50px;
+            padding: 12px 24px;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
             transition: all 0.3s ease;
         }
         
-        .compatible-ewe-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .selected-ram-display {
-            min-height: 200px;
-        }
-        
-        .sheep-details {
-            font-size: 0.9rem;
+        .action-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
         }
         
         /* Custom scrollbar */
-        .rams-scroll-container::-webkit-scrollbar,
-        .ewes-sidebar::-webkit-scrollbar,
-        .compatible-ewes-grid::-webkit-scrollbar {
+        .scroll-container::-webkit-scrollbar,
+        .animal-sidebar::-webkit-scrollbar {
             width: 8px;
             height: 8px;
         }
         
-        .rams-scroll-container::-webkit-scrollbar-track,
-        .ewes-sidebar::-webkit-scrollbar-track,
-        .compatible-ewes-grid::-webkit-scrollbar-track {
+        .scroll-container::-webkit-scrollbar-track,
+        .animal-sidebar::-webkit-scrollbar-track {
             background: #f1f1f1;
             border-radius: 4px;
         }
         
-        .rams-scroll-container::-webkit-scrollbar-thumb,
-        .ewes-sidebar::-webkit-scrollbar-thumb,
-        .compatible-ewes-grid::-webkit-scrollbar-thumb {
+        .scroll-container::-webkit-scrollbar-thumb,
+        .animal-sidebar::-webkit-scrollbar-thumb {
             background: #c1c1c1;
             border-radius: 4px;
         }
         
-        .rams-scroll-container::-webkit-scrollbar-thumb:hover,
-        .ewes-sidebar::-webkit-scrollbar-thumb:hover,
-        .compatible-ewes-grid::-webkit-scrollbar-thumb:hover {
+        .scroll-container::-webkit-scrollbar-thumb:hover,
+        .animal-sidebar::-webkit-scrollbar-thumb:hover {
             background: #a8a8a8;
         }
         
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #6c757d;
+        }
+        
+        .empty-state i {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        .stats-card {
+            background: white;
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            margin-bottom: 1.5rem;
+        }
+        
+        .stats-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+        
+        .stats-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+            font-weight: 500;
+        }
+        
+        .animal-type-icon {
+            font-size: 1.5rem;
+            margin-right: 10px;
+            color: var(--primary);
+        }
+        
+        .animal-count {
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .animal-details {
+            font-size: 0.85rem;
+        }
+        
+        /* Loading animation */
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
         @media (max-width: 768px) {
-            .main-layout {
-                flex-direction: column;
-            }
-            
-            .ewes-sidebar {
+            .animal-sidebar {
                 height: auto;
                 max-height: 40vh;
             }
             
-            .compatible-ewes-grid {
-                grid-template-columns: 1fr;
+            .stats-card {
+                margin-bottom: 1rem;
+            }
+            
+            .action-buttons {
+                bottom: 10px;
+                right: 10px;
+            }
+            
+            .action-btn {
+                padding: 10px 20px;
+                font-size: 0.9rem;
             }
         }
     </style>
 </head>
-<body class="breeding-container">
-    <div class="container-fluid">
+<body>
+    <div class="container py-4">
         <!-- Header Section -->
+        <div class="header-gradient text-center">
+            <div class="d-flex align-items-center justify-content-center mb-3">
+                <i class="bi bi-gender-ambiguous display-4 me-3"></i>
+                <div>
+                    <h1 class="display-6 fw-bold mb-0">Sheep Breeding Selection System</h1>
+                    <p class="mb-0 opacity-75">Select animals to view compatible breeding pairs</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Filter Section -->
+        <div class="filter-section">
+            <h5 class="filter-title"><i class="bi bi-funnel me-2"></i>Filter by Breed (Global)</h5>
+            <div class="d-flex flex-wrap">
+                <span class="badge filter-badge breed-local active" data-breed="all">All Breeds</span>
+                <span class="badge filter-badge breed-pa" data-breed="pa">PA</span>
+                <span class="badge filter-badge breed-pd" data-breed="pd">PD</span>
+                <span class="badge filter-badge breed-ac" data-breed="ac">AC</span>
+                <span class="badge filter-badge breed-dc" data-breed="dc">DC</span>
+                <span class="badge filter-badge breed-local" data-breed="local">LOCAL</span>
+            </div>
+        </div>
+
+        <!-- Stats Overview -->
         <div class="row mb-4">
-            <div class="col-12">
-                <div class="card shadow-sm">
-                    <div class="card-body text-center">
-                        <h1 class="card-title text-primary">
-                            <i class="bi bi-gender-ambiguous"></i>
-                            Sheep Breeding Selection System
-                        </h1>
-                        <p class="card-text text-muted">
-                            Select a ram to see compatible ewes for breeding. The system automatically filters out close family members.
-                        </p>
-                    </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stats-card text-center">
+                    <div class="stats-value" id="rams-count">{{ rams.count }}</div>
+                    <div class="stats-label">Available Rams</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stats-card text-center">
+                    <div class="stats-value" id="ewes-count">{{ ewes.count }}</div>
+                    <div class="stats-label">Available Ewes</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stats-card text-center">
+                    <div class="stats-value" id="lambs-count">{{ lambs.count }}</div>
+                    <div class="stats-label">Available Lambs</div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stats-card text-center">
+                    <!-- Fixed the template syntax error - use with tag to calculate sum -->
+                    {% with total_young_stock=gimmers.count %}
+                        {% widthratio total_young_stock 1 1 as gimmers_count %}
+                        {% with young_rams_count=young_rams.count %}
+                            <div class="stats-value" id="young-stock-count">{{ gimmers_count|add:young_rams_count }}</div>
+                        {% endwith %}
+                    {% endwith %}
+                    <div class="stats-label">Young Stock</div>
                 </div>
             </div>
         </div>
 
         <!-- Available Rams Section -->
-        <div class="row mb-4">
+        <div class="row mb-5">
             <div class="col-12">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-primary text-white">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-gender-male"></i>
-                            Available Rams
-                        </h5>
+                <div class="card-modern">
+                    <div class="card-header-modern d-flex align-items-center justify-content-between">
+                        <div>
+                            <i class="bi bi-gender-male me-2"></i>
+                            <span>Available Rams</span>
+                            <span class="badge bg-light text-dark ms-2" id="rams-display-count">{{ rams.count }}</span>
+                        </div>
+                        <div class="filter-controls">
+                            <small class="text-light me-2">Filter:</small>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-light active" data-section="rams" data-breed="all">All</button>
+                                <button type="button" class="btn btn-light" data-section="rams" data-breed="pa">PA</button>
+                                <button type="button" class="btn btn-light" data-section="rams" data-breed="pd">PD</button>
+                                <button type="button" class="btn btn-light" data-section="rams" data-breed="ac">AC</button>
+                                <button type="button" class="btn btn-light" data-section="rams" data-breed="dc">DC</button>
+                                <button type="button" class="btn btn-light" data-section="rams" data-breed="local">LOCAL</button>
+                            </div>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="rams-scroll-container">
+                    <div class="card-body p-4">
+                        <div class="scroll-container" id="rams-container">
                             {% for ram in rams %}
-                            <div class="card ram-card {% if selected_ram and selected_ram.ear_tag_number == ram.ear_tag_number %}selected border-primary{% else %}border-light{% endif %}" 
-                                 style="min-width: 220px;"
-                                 data-ram-id="{{ ram.ear_tag_number }}">
+                            <div class="card animal-card {% if selected_ram and selected_ram.ear_tag_number == ram.ear_tag_number %}selected{% endif %}" 
+                                 style="min-width: 260px;"
+                                 data-ram-id="{{ ram.ear_tag_number }}"
+                                 data-breed="{{ ram.breed|lower }}"
+                                 data-state="{{ ram.state|lower }}">
                                 <div class="card-body">
                                     <div class="d-flex justify-content-between align-items-start mb-2">
-                                        <h6 class="card-title text-truncate">{{ ram.ear_tag_number }}</h6>
+                                        <div>
+                                            <h5 class="card-title fw-bold text-truncate me-2">{{ ram.ear_tag_number }}</h5>
+                                            <span class="badge state-badge state-{{ ram.state|lower }}">{{ ram.state }}</span>
+                                        </div>
                                         <span class="badge breed-badge breed-{{ ram.breed|lower }}">{{ ram.breed }}</span>
                                     </div>
-                                    <div class="sheep-details">
-                                        <p class="card-text mb-1">
-                                            <small class="text-muted">Level: <strong>{{ ram.breed_level }}%</strong></small>
-                                        </p>
-                                        <p class="card-text mb-1">
-                                            <small class="text-muted">Type: {{ ram.type }}</small>
-                                        </p>
-                                        <p class="card-text mb-0">
+                                    
+                                    <div class="mb-3">
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <small class="text-muted">Breed Level</small>
+                                            <small class="fw-bold">{{ ram.breed_level }}%</small>
+                                        </div>
+                                        <div class="progress-modern">
+                                            <div class="progress-bar-modern" style="width: {{ ram.breed_level }}%"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="animal-details">
+                                        <div class="d-flex align-items-center mb-2">
+                                            <i class="bi bi-tag text-primary me-2"></i>
+                                            <small class="text-muted">Type: <span class="fw-medium">{{ ram.type }}</span></small>
+                                        </div>
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-calendar3 text-primary me-2"></i>
                                             <small class="text-muted">
                                                 Age: 
                                                 {% if ram.date_of_birth %}
@@ -186,14 +445,15 @@
                                                     Unknown
                                                 {% endif %}
                                             </small>
-                                        </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                             {% empty %}
-                            <div class="text-center text-muted py-4 w-100">
-                                <i class="bi bi-exclamation-circle display-4"></i>
-                                <p class="mt-2">No available rams found</p>
+                            <div class="empty-state w-100">
+                                <i class="bi bi-exclamation-circle"></i>
+                                <h4>No Rams Available</h4>
+                                <p>There are currently no rams available for selection.</p>
                             </div>
                             {% endfor %}
                         </div>
@@ -202,37 +462,61 @@
             </div>
         </div>
 
-        
-
-        <!-- Main Content Area -->
+        <!-- Animal Categories Section -->
         <div class="row">
             <!-- Ewes Sidebar -->
-            <div class="col-lg-3 col-md-4 mb-4">
-                <div class="card shadow-sm h-100">
-                    <div class="card-header bg-danger text-white">
-                        <h5 class="card-title mb-0">
-                            <i class="bi bi-gender-female"></i>
-                            All Available Ewes
-                        </h5>
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="card-modern h-100">
+                    <div class="card-header-modern d-flex align-items-center justify-content-between">
+                        <div>
+                            <i class="bi bi-gender-female me-2"></i>
+                            <span>Available Ewes</span>
+                            <span class="animal-count" id="ewes-display-count">{{ ewes.count }}</span>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Filter
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item active" href="#" data-section="ewes" data-breed="all">All Breeds</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#" data-section="ewes" data-breed="pa">PA</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="ewes" data-breed="pd">PD</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="ewes" data-breed="ac">AC</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="ewes" data-breed="dc">DC</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="ewes" data-breed="local">LOCAL</a></li>
+                            </ul>
+                        </div>
                     </div>
                     <div class="card-body p-0">
-                        <div class="ewes-sidebar">
+                        <div class="animal-sidebar" id="ewes-container">
                             {% for ewe in ewes %}
-                            <div class="card ewe-card border-light m-2" data-ewe-id="{{ ewe.ear_tag_number }}">
-                                <div class="card-body py-2">
-                                    <div class="d-flex justify-content-between align-items-center mb-1">
-                                        <h6 class="card-title mb-0 small">{{ ewe.ear_tag_number }}</h6>
+                            <div class="card animal-card border-light m-2" data-ewe-id="{{ ewe.ear_tag_number }}" data-breed="{{ ewe.breed|lower }}" data-state="{{ ewe.state|lower }}">
+                                <div class="card-body py-3">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <h6 class="card-title fw-bold mb-0">{{ ewe.ear_tag_number }}</h6>
+                                            <span class="badge state-badge state-{{ ewe.state|lower }}">{{ ewe.state }}</span>
+                                        </div>
                                         <span class="badge breed-badge breed-{{ ewe.breed|lower }}">{{ ewe.breed }}</span>
                                     </div>
-                                    <div class="sheep-details">
-                                        <p class="card-text mb-0 small text-muted">
-                                            Level: {{ ewe.breed_level }}% | Type: {{ ewe.type }}
-                                        </p>
+                                    <div class="animal-details">
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <small class="text-muted">Level</small>
+                                            <small class="fw-bold">{{ ewe.breed_level }}%</small>
+                                        </div>
+                                        <div class="progress-modern mb-2">
+                                            <div class="progress-bar-modern" style="width: {{ ewe.breed_level }}%"></div>
+                                        </div>
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-tag text-primary me-1"></i>
+                                            <small class="text-muted">Type: {{ ewe.type }}</small>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                             {% empty %}
-                            <div class="text-center text-muted py-4">
+                            <div class="empty-state">
                                 <i class="bi bi-exclamation-circle"></i>
                                 <p class="mt-2">No available ewes found</p>
                             </div>
@@ -242,11 +526,950 @@
                 </div>
             </div>
 
+            <!-- Lambs Sidebar -->
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="card-modern h-100">
+                    <div class="card-header-modern d-flex align-items-center justify-content-between">
+                        <div>
+                            <i class="bi bi-heart me-2"></i>
+                            <span>Available Lambs</span>
+                            <span class="animal-count" id="lambs-display-count">{{ lambs.count }}</span>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Filter
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item active" href="#" data-section="lambs" data-breed="all">All Breeds</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#" data-section="lambs" data-breed="pa">PA</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="lambs" data-breed="pd">PD</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="lambs" data-breed="ac">AC</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="lambs" data-breed="dc">DC</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="lambs" data-breed="local">LOCAL</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="animal-sidebar" id="lambs-container">
+                            {% for lamb in lambs %}
+                            <div class="card animal-card border-light m-2" data-lamb-id="{{ lamb.ear_tag_number }}" data-breed="{{ lamb.breed|lower }}" data-state="{{ lamb.state|lower }}">
+                                <div class="card-body py-3">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <h6 class="card-title fw-bold mb-0">{{ lamb.ear_tag_number }}</h6>
+                                            <span class="badge state-badge state-{{ lamb.state|lower }}">{{ lamb.state }}</span>
+                                        </div>
+                                        <span class="badge breed-badge breed-{{ lamb.breed|lower }}">{{ lamb.breed }}</span>
+                                    </div>
+                                    <div class="animal-details">
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <small class="text-muted">Level</small>
+                                            <small class="fw-bold">{{ lamb.breed_level }}%</small>
+                                        </div>
+                                        <div class="progress-modern mb-2">
+                                            <div class="progress-bar-modern" style="width: {{ lamb.breed_level }}%"></div>
+                                        </div>
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-tag text-primary me-1"></i>
+                                            <small class="text-muted">Type: {{ lamb.type }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <div class="empty-state">
+                                <i class="bi bi-exclamation-circle"></i>
+                                <p class="mt-2">No available lambs found</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gimmers Sidebar -->
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="card-modern h-100">
+                    <div class="card-header-modern d-flex align-items-center justify-content-between">
+                        <div>
+                            <i class="bi bi-flower1 me-2"></i>
+                            <span>Available Gimmers</span>
+                            <span class="animal-count" id="gimmers-display-count">{{ gimmers.count }}</span>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Filter
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item active" href="#" data-section="gimmers" data-breed="all">All Breeds</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#" data-section="gimmers" data-breed="pa">PA</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="gimmers" data-breed="pd">PD</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="gimmers" data-breed="ac">AC</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="gimmers" data-breed="dc">DC</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="gimmers" data-breed="local">LOCAL</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="animal-sidebar" id="gimmers-container">
+                            {% for gimmer in gimmers %}
+                            <div class="card animal-card border-light m-2" data-gimmer-id="{{ gimmer.ear_tag_number }}" data-breed="{{ gimmer.breed|lower }}" data-state="{{ gimmer.state|lower }}">
+                                <div class="card-body py-3">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <h6 class="card-title fw-bold mb-0">{{ gimmer.ear_tag_number }}</h6>
+                                            <span class="badge state-badge state-{{ gimmer.state|lower }}">{{ gimmer.state }}</span>
+                                        </div>
+                                        <span class="badge breed-badge breed-{{ gimmer.breed|lower }}">{{ gimmer.breed }}</span>
+                                    </div>
+                                    <div class="animal-details">
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <small class="text-muted">Level</small>
+                                            <small class="fw-bold">{{ gimmer.breed_level }}%</small>
+                                        </div>
+                                        <div class="progress-modern mb-2">
+                                            <div class="progress-bar-modern" style="width: {{ gimmer.breed_level }}%"></div>
+                                        </div>
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-tag text-primary me-1"></i>
+                                            <small class="text-muted">Type: {{ gimmer.type }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <div class="empty-state">
+                                <i class="bi bi-exclamation-circle"></i>
+                                <p class="mt-2">No available gimmers found</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Young Rams Sidebar -->
+            <div class="col-lg-3 col-md-6 mb-4">
+                <div class="card-modern h-100">
+                    <div class="card-header-modern d-flex align-items-center justify-content-between">
+                        <div>
+                            <i class="bi bi-gender-male me-2"></i>
+                            <span>Available Young Rams</span>
+                            <span class="animal-count" id="young-rams-display-count">{{ young_rams.count }}</span>
+                        </div>
+                        <div class="dropdown">
+                            <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                Filter
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item active" href="#" data-section="young-rams" data-breed="all">All Breeds</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#" data-section="young-rams" data-breed="pa">PA</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="young-rams" data-breed="pd">PD</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="young-rams" data-breed="ac">AC</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="young-rams" data-breed="dc">DC</a></li>
+                                <li><a class="dropdown-item" href="#" data-section="young-rams" data-breed="local">LOCAL</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="animal-sidebar" id="young-rams-container">
+                            {% for young_ram in young_rams %}
+                            <div class="card animal-card border-light m-2" data-young-ram-id="{{ young_ram.ear_tag_number }}" data-breed="{{ young_ram.breed|lower }}" data-state="{{ young_ram.state|lower }}">
+                                <div class="card-body py-3">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <h6 class="card-title fw-bold mb-0">{{ young_ram.ear_tag_number }}</h6>
+                                            <span class="badge state-badge state-{{ young_ram.state|lower }}">{{ young_ram.state }}</span>
+                                        </div>
+                                        <span class="badge breed-badge breed-{{ young_ram.breed|lower }}">{{ young_ram.breed }}</span>
+                                    </div>
+                                    <div class="animal-details">
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <small class="text-muted">Level</small>
+                                            <small class="fw-bold">{{ young_ram.breed_level }}%</small>
+                                        </div>
+                                        <div class="progress-modern mb-2">
+                                            <div class="progress-bar-modern" style="width: {{ young_ram.breed_level }}%"></div>
+                                        </div>
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-tag text-primary me-1"></i>
+                                            <small class="text-muted">Type: {{ young_ram.type }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <div class="empty-state">
+                                <i class="bi bi-exclamation-circle"></i>
+                                <p class="mt-2">No available young rams found</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+        <button type="button" class="btn btn-warning action-btn me-2" data-bs-toggle="modal" data-bs-target="#ramFlashingModal">
+            <i class="bi bi-lightning-charge-fill me-1"></i> Flash Rams
+        </button>
+        <button type="button" class="btn btn-warning action-btn me-2" data-bs-toggle="modal" data-bs-target="#eweFlashingModal">
+            <i class="bi bi-lightning-charge-fill me-1"></i> Flash Ewes
+        </button>
+        <button type="button" class="btn btn-success action-btn" data-bs-toggle="modal" data-bs-target="#ramSelectionModal">
+            <i class="bi bi-heart-fill me-1"></i> Start Breeding
+        </button>
+    </div>
+
+    <!-- Ram Selection Modal -->
+<!-- <div class="modal fade" id="ramSelectionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Select Rams for Breeding</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <form method="post" action="{% url 'breeding_task' %}">
+                {% csrf_token %}
+
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        This will change the selected sheep state to "BREEDING"
+                    </div>
+
+                    <div class="row">
+
+                        {% for ram in rams %}
+                            {% if ram.state == "FLASHING" %}
+                                <div class="col-md-6 mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" 
+                                            name="rams" value="{{ ram.ear_tag_number }}" 
+                                            id="ram_{{ ram.ear_tag_number }}">
+
+                                        <label class="form-check-label" for="ram_{{ ram.ear_tag_number }}">
+                                            <strong>{{ ram.ear_tag_number }}</strong> - {{ ram.breed }}
+                                            <br>
+                                            <small class="text-muted">
+                                                Current State:
+                                                <span class="badge bg-warning">{{ ram.state }}</span>
+                                            </small>
+                                        </label>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% empty %}
+                            <div class="col-12 text-center py-4">
+                                <i class="bi bi-exclamation-triangle display-4 text-warning"></i>
+                                <h5 class="mt-3">No Rams Available for Breeding</h5>
+                                <p class="text-muted">No rams are currently in FLASHING state.</p>
+                            </div>
+                        {% endfor %}
+
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-heart-fill me-1"></i> Proceed
+                    </button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+</div> -->
+
+<div class="modal fade" id="ramSelectionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Select Rams for Breeding</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <form method="post" action="{% url 'process_ram_selection' %}">
+                {% csrf_token %}
+
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Select rams that are ready for breeding (FLASHING state).
+                    </div>
+
+                    <div class="row">
+                        {% for ram in rams %}
+                            {% if ram.state == "FLASHING" %}
+                                <div class="col-md-6 mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" 
+                                            name="rams" value="{{ ram.ear_tag_number }}" 
+                                            id="ram_{{ ram.ear_tag_number }}">
+
+                                        <label class="form-check-label" for="ram_{{ ram.ear_tag_number }}">
+                                            <strong>{{ ram.ear_tag_number }}</strong> - {{ ram.breed }}
+                                        </label>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% empty %}
+                            <div class="col-12 text-center py-4">
+                                <h5 class="text-muted">No Rams in FLASHING state available.</h5>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        Proceed to Task <i class="bi bi-arrow-right"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+    <!-- RAM Flashing Modal -->
+<div class="modal fade" id="ramFlashingModal">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5>Select Rams for Flashing</h5>
+                <button class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <form method="post" action="{% url 'flash_rams_state' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        This will change selected Rams to "FLASHING"
+                    </div>
+
+                    <div class="row">
+                        {% for ram in rams %}
+                            {% if ram.state == "SCILENT" and ram.type == "RAM" %}
+                                <div class="col-md-6 mb-3">
+                                    <input type="checkbox" name="rams" value="{{ ram.ear_tag_number }}">
+                                    <label><strong>{{ ram.ear_tag_number }}</strong> ({{ ram.breed }})</label>
+                                </div>
+                            {% endif %}
+                        {% empty %}
+                            <p>No Rams available in SCILENT state.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-warning" type="submit">Flash Selected</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- EWE Flashing Modal -->
+<div class="modal fade" id="eweFlashingModal">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5>Select Ewes for Flashing</h5>
+                <button class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <form method="post" action="{% url 'flash_ewes_state' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        This will change selected Ewes to "FLASHING"
+                    </div>
+
+                    <div class="row">
+                        {% for ewe in ewes %}
+                            {% if ewe.state == "SCILENT" and ewe.type == "EWE" %}
+                                <div class="col-md-6 mb-3">
+                                    <input type="checkbox" name="ewes" value="{{ ewe.ear_tag_number }}">
+                                    <label><strong>{{ ewe.ear_tag_number }}</strong> ({{ ewe.breed }})</label>
+                                </div>
+                            {% endif %}
+                        {% empty %}
+                            <p>No Ewes available in SCILENT state.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-warning" type="submit">Flash Selected</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
+
+   
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Single JavaScript Implementation -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize filter state
+            let globalFilter = 'all';
+            let sectionFilters = {
+                'rams': 'all',
+                'ewes': 'all',
+                'lambs': 'all',
+                'gimmers': 'all',
+                'young-rams': 'all'
+            };
+
+            // Add interactivity for selecting animals
+            const ramCards = document.querySelectorAll('.animal-card[data-ram-id]');
+            
+            ramCards.forEach(card => {
+                card.addEventListener('click', function() {
+                    // Remove selected class from all ram cards
+                    ramCards.forEach(c => c.classList.remove('selected'));
+                    
+                    // Add selected class to clicked card
+                    this.classList.add('selected');
+                    
+                    // In a real application, you would fetch compatible animals for the selected ram
+                    console.log('Selected ram:', this.getAttribute('data-ram-id'));
+                });
+            });
+
+            // Global filter functionality
+            const globalFilterBadges = document.querySelectorAll('.filter-badge[data-breed]');
+            
+            globalFilterBadges.forEach(badge => {
+                badge.addEventListener('click', function() {
+                    const breed = this.getAttribute('data-breed');
+                    
+                    // Update active state
+                    globalFilterBadges.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Apply filter to all sections
+                    Object.keys(sectionFilters).forEach(section => {
+                        sectionFilters[section] = breed;
+                        applyFilterToSection(section, breed);
+                    });
+                    
+                    // Update section filter buttons
+                    updateSectionFilterButtons(breed);
+                });
+            });
+
+            // Section-specific filter functionality
+            const sectionFilterButtons = document.querySelectorAll('[data-section]');
+            
+            sectionFilterButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const section = this.getAttribute('data-section');
+                    const breed = this.getAttribute('data-breed');
+                    
+                    // Update section filter
+                    sectionFilters[section] = breed;
+                    
+                    // Apply filter to the specific section
+                    applyFilterToSection(section, breed);
+                    
+                    // Update active state for this section's filter buttons
+                    const parent = this.closest('.btn-group, .dropdown-menu');
+                    if (parent) {
+                        const buttons = parent.querySelectorAll('[data-section]');
+                        buttons.forEach(btn => {
+                            if (btn.classList.contains('dropdown-item')) {
+                                btn.classList.remove('active');
+                            } else {
+                                btn.classList.remove('active');
+                            }
+                        });
+                        
+                        if (this.classList.contains('dropdown-item')) {
+                            this.classList.add('active');
+                        } else {
+                            this.classList.add('active');
+                        }
+                    }
+                });
+            });
+
+            // Function to apply filter to a specific section
+            function applyFilterToSection(section, breed) {
+                const container = document.getElementById(`${section}-container`);
+                if (!container) return;
+                
+                const cards = container.querySelectorAll('.animal-card');
+                let visibleCount = 0;
+                
+                cards.forEach(card => {
+                    const cardBreed = card.getAttribute('data-breed');
+                    
+                    if (breed === 'all' || cardBreed === breed) {
+                        card.style.display = 'block';
+                        visibleCount++;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+                
+                // Update display count for the section
+                const countElement = document.getElementById(`${section}-display-count`);
+                if (countElement) {
+                    countElement.textContent = visibleCount;
+                }
+                
+                // Update empty state visibility
+                const emptyState = container.querySelector('.empty-state');
+                if (emptyState) {
+                    if (visibleCount === 0 && container.querySelectorAll('.animal-card').length > 0) {
+                        emptyState.style.display = 'block';
+                    } else {
+                        emptyState.style.display = 'none';
+                    }
+                }
+            }
+
+            // Function to update all section filter buttons to match global filter
+            function updateSectionFilterButtons(breed) {
+                sectionFilterButtons.forEach(button => {
+                    const section = button.getAttribute('data-section');
+                    if (button.getAttribute('data-breed') === breed) {
+                        // Trigger click on the matching button
+                        button.click();
+                    }
+                });
+            }
+
+            // Form submission handlers for better UX
+            const breedingForm = document.getElementById('breedingForm');
+            const breedingSubmit = document.getElementById('breedingSubmit');
+            
+            if (breedingForm && breedingSubmit) {
+                breedingForm.addEventListener('submit', function(e) {
+                    const checkboxes = this.querySelectorAll('input[type="checkbox"]:checked');
+                    if (checkboxes.length === 0) {
+                        e.preventDefault();
+                        alert('Please select at least one ram for breeding.');
+                        return;
+                    }
+                    
+                    // Show loading state
+                    breedingSubmit.disabled = true;
+                    breedingSubmit.innerHTML = '<span class="loading-spinner"></span> Processing...';
+                });
+            }
+
+            const flashingForm = document.getElementById('flashingForm');
+            const flashingSubmit = document.getElementById('flashingSubmit');
+            
+            if (flashingForm && flashingSubmit) {
+                flashingForm.addEventListener('submit', function(e) {
+                    const checkboxes = this.querySelectorAll('input[type="checkbox"]:checked');
+                    if (checkboxes.length === 0) {
+                        e.preventDefault();
+                        alert('Please select at least one sheep for flashing.');
+                        return;
+                    }
+                    
+                    // Show loading state
+                    flashingSubmit.disabled = true;
+                    flashingSubmit.innerHTML = '<span class="loading-spinner"></span> Processing...';
+                });
+            }
+
+            // Initialize all sections with 'all' filter
+            Object.keys(sectionFilters).forEach(section => {
+                applyFilterToSection(section, 'all');
+            });
+
+            // Add state filter functionality
+            const stateFilterButtons = document.querySelectorAll('[data-state-filter]');
+            stateFilterButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const state = this.getAttribute('data-state-filter');
+                    filterByState(state);
+                });
+            });
+
+            // Function to filter by state
+            function filterByState(state) {
+                const allCards = document.querySelectorAll('.animal-card');
+                
+                allCards.forEach(card => {
+                    const cardState = card.getAttribute('data-state');
+                    
+                    if (state === 'all' || cardState === state) {
+                        card.style.display = 'block';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+
+    <!-- Bootstrap JS Bundle -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize filter state
+            let globalFilter = 'all';
+            let sectionFilters = {
+                'rams': 'all',
+                'ewes': 'all',
+                'lambs': 'all',
+                'gimmers': 'all',
+                'young-rams': 'all'
+            };
+
+            // Add interactivity for selecting animals
+            const ramCards = document.querySelectorAll('.animal-card[data-ram-id]');
+            
+            ramCards.forEach(card => {
+                card.addEventListener('click', function() {
+                    // Remove selected class from all ram cards
+                    ramCards.forEach(c => c.classList.remove('selected'));
+                    
+                    // Add selected class to clicked card
+                    this.classList.add('selected');
+                    
+                    // In a real application, you would fetch compatible animals for the selected ram
+                    console.log('Selected ram:', this.getAttribute('data-ram-id'));
+                });
+            });
+
+            // Global filter functionality
+            const globalFilterBadges = document.querySelectorAll('.filter-badge[data-breed]');
+            
+            globalFilterBadges.forEach(badge => {
+                badge.addEventListener('click', function() {
+                    const breed = this.getAttribute('data-breed');
+                    
+                    // Update active state
+                    globalFilterBadges.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Apply filter to all sections
+                    Object.keys(sectionFilters).forEach(section => {
+                        sectionFilters[section] = breed;
+                        applyFilterToSection(section, breed);
+                    });
+                    
+                    // Update section filter buttons
+                    updateSectionFilterButtons(breed);
+                });
+            });
+
+            // Section-specific filter functionality
+            const sectionFilterButtons = document.querySelectorAll('[data-section]');
+            
+            sectionFilterButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const section = this.getAttribute('data-section');
+                    const breed = this.getAttribute('data-breed');
+                    
+                    // Update section filter
+                    sectionFilters[section] = breed;
+                    
+                    // Apply filter to the specific section
+                    applyFilterToSection(section, breed);
+                    
+                    // Update active state for this section's filter buttons
+                    const parent = this.closest('.btn-group, .dropdown-menu');
+                    if (parent) {
+                        const buttons = parent.querySelectorAll('[data-section]');
+                        buttons.forEach(btn => {
+                            if (btn.classList.contains('dropdown-item')) {
+                                btn.classList.remove('active');
+                            } else {
+                                btn.classList.remove('active');
+                            }
+                        });
+                        
+                        if (this.classList.contains('dropdown-item')) {
+                            this.classList.add('active');
+                        } else {
+                            this.classList.add('active');
+                        }
+                    }
+                });
+            });
+
+            // Function to apply filter to a specific section
+            function applyFilterToSection(section, breed) {
+                const container = document.getElementById(`${section}-container`);
+                if (!container) return;
+                
+                const cards = container.querySelectorAll('.animal-card');
+                let visibleCount = 0;
+                
+                cards.forEach(card => {
+                    const cardBreed = card.getAttribute('data-breed');
+                    
+                    if (breed === 'all' || cardBreed === breed) {
+                        card.style.display = 'block';
+                        visibleCount++;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+                
+                // Update display count for the section
+                const countElement = document.getElementById(`${section}-display-count`);
+                if (countElement) {
+                    countElement.textContent = visibleCount;
+                }
+                
+                // Update empty state visibility
+                const emptyState = container.querySelector('.empty-state');
+                if (emptyState) {
+                    if (visibleCount === 0 && container.querySelectorAll('.animal-card').length > 0) {
+                        // Create empty state if it doesn't exist
+                        if (!emptyState) {
+                            const newEmptyState = document.createElement('div');
+                            newEmptyState.className = 'empty-state';
+                            newEmptyState.innerHTML = `
+                                <i class="bi bi-search"></i>
+                                <h4>No ${section.replace('-', ' ')} found</h4>
+                                <p>No animals match the selected breed filter.</p>
+                            `;
+                            container.appendChild(newEmptyState);
+                        } else {
+                            emptyState.style.display = 'block';
+                        }
+                    } else if (emptyState) {
+                        emptyState.style.display = 'none';
+                    }
+                }
+            }
+
+            // Function to update all section filter buttons to match global filter
+            function updateSectionFilterButtons(breed) {
+                sectionFilterButtons.forEach(button => {
+                    const section = button.getAttribute('data-section');
+                    if (button.getAttribute('data-breed') === breed) {
+                        // Trigger click on the matching button
+                        button.click();
+                    }
+                });
+            }
+
+            // Initialize all sections with 'all' filter
+            Object.keys(sectionFilters).forEach(section => {
+                applyFilterToSection(section, 'all');
+            });
+
+            // Form submission handlers for better UX
+            const breedingForm = document.getElementById('breedingForm');
+            if (breedingForm) {
+                breedingForm.addEventListener('submit', function(e) {
+                    const checkboxes = this.querySelectorAll('input[type="checkbox"]:checked');
+                    if (checkboxes.length === 0) {
+                        e.preventDefault();
+                        alert('Please select at least one ram for breeding.');
+                    }
+                });
+            }
+
+            const flashingForm = document.getElementById('flashingForm');
+            if (flashingForm) {
+                flashingForm.addEventListener('submit', function(e) {
+                    const checkboxes = this.querySelectorAll('input[type="checkbox"]:checked');
+                    if (checkboxes.length === 0) {
+                        e.preventDefault();
+                        alert('Please select at least one sheep for flashing.');
+                    }
+                });
+            }
+        });
+    </script> -->
+<!-- </body>
+</html> -->
+    <!-- Bootstrap JS Bundle -->
+    <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize filter state
+            let globalFilter = 'all';
+            let sectionFilters = {
+                'rams': 'all',
+                'ewes': 'all',
+                'lambs': 'all',
+                'gimmers': 'all',
+                'young-rams': 'all'
+            };
+
+            // Add interactivity for selecting animals
+            const ramCards = document.querySelectorAll('.animal-card[data-ram-id]');
+            
+            ramCards.forEach(card => {
+                card.addEventListener('click', function() {
+                    // Remove selected class from all ram cards
+                    ramCards.forEach(c => c.classList.remove('selected'));
+                    
+                    // Add selected class to clicked card
+                    this.classList.add('selected');
+                    
+                    // In a real application, you would fetch compatible animals for the selected ram
+                    console.log('Selected ram:', this.getAttribute('data-ram-id'));
+                });
+            });
+
+            // Global filter functionality
+            const globalFilterBadges = document.querySelectorAll('.filter-badge[data-breed]');
+            
+            globalFilterBadges.forEach(badge => {
+                badge.addEventListener('click', function() {
+                    const breed = this.getAttribute('data-breed');
+                    
+                    // Update active state
+                    globalFilterBadges.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                    
+                    // Apply filter to all sections
+                    Object.keys(sectionFilters).forEach(section => {
+                        sectionFilters[section] = breed;
+                        applyFilterToSection(section, breed);
+                    });
+                    
+                    // Update section filter buttons
+                    updateSectionFilterButtons(breed);
+                });
+            });
+
+            // Section-specific filter functionality
+            const sectionFilterButtons = document.querySelectorAll('[data-section]');
+            
+            sectionFilterButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const section = this.getAttribute('data-section');
+                    const breed = this.getAttribute('data-breed');
+                    
+                    // Update section filter
+                    sectionFilters[section] = breed;
+                    
+                    // Apply filter to the specific section
+                    applyFilterToSection(section, breed);
+                    
+                    // Update active state for this section's filter buttons
+                    const parent = this.closest('.btn-group, .dropdown-menu');
+                    if (parent) {
+                        const buttons = parent.querySelectorAll('[data-section]');
+                        buttons.forEach(btn => {
+                            if (btn.classList.contains('dropdown-item')) {
+                                btn.classList.remove('active');
+                            } else {
+                                btn.classList.remove('active');
+                            }
+                        });
+                        
+                        if (this.classList.contains('dropdown-item')) {
+                            this.classList.add('active');
+                        } else {
+                            this.classList.add('active');
+                        }
+                    }
+                });
+            });
+
+            // Function to apply filter to a specific section
+            function applyFilterToSection(section, breed) {
+                const container = document.getElementById(`${section}-container`);
+                if (!container) return;
+                
+                const cards = container.querySelectorAll('.animal-card');
+                let visibleCount = 0;
+                
+                cards.forEach(card => {
+                    const cardBreed = card.getAttribute('data-breed');
+                    
+                    if (breed === 'all' || cardBreed === breed) {
+                        card.style.display = 'block';
+                        visibleCount++;
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+                
+                // Update display count for the section
+                const countElement = document.getElementById(`${section}-display-count`);
+                if (countElement) {
+                    countElement.textContent = visibleCount;
+                }
+                
+                // Update empty state visibility
+                const emptyState = container.querySelector('.empty-state');
+                if (emptyState) {
+                    if (visibleCount === 0 && container.querySelectorAll('.animal-card').length > 0) {
+                        // Create empty state if it doesn't exist
+                        if (!emptyState) {
+                            const newEmptyState = document.createElement('div');
+                            newEmptyState.className = 'empty-state';
+                            newEmptyState.innerHTML = `
+                                <i class="bi bi-search"></i>
+                                <h4>No ${section.replace('-', ' ')} found</h4>
+                                <p>No animals match the selected breed filter.</p>
+                            `;
+                            container.appendChild(newEmptyState);
+                        } else {
+                            emptyState.style.display = 'block';
+                        }
+                    } else if (emptyState) {
+                        emptyState.style.display = 'none';
+                    }
+                }
+            }
+
+            // Function to update all section filter buttons to match global filter
+            function updateSectionFilterButtons(breed) {
+                sectionFilterButtons.forEach(button => {
+                    const section = button.getAttribute('data-section');
+                    if (button.getAttribute('data-breed') === breed) {
+                        // Trigger click on the matching button
+                        button.click();
+                    }
+                });
+            }
+
+            // Initialize all sections with 'all' filter
+            Object.keys(sectionFilters).forEach(section => {
+                applyFilterToSection(section, 'all');
+            });
+        });
+    </script> -->
+<!-- </body>
+</html> -->
+
             <!-- Main Breeding Area -->
-            <div class="col-lg-9 col-md-8">
-                <div class="row h-100">
+            <!-- <div class="col-lg-9 col-md-8">
+                <div class="row h-100"> -->
                     <!-- Selected Ram Display -->
-                    <div class="col-12 mb-4">
+                    <!-- <div class="col-12 mb-4">
                         <div class="card shadow-sm">
                             <div class="card-header bg-success text-white">
                                 <h5 class="card-title mb-0">
@@ -297,8 +1520,8 @@
                                                 </small>
                                             </div>
                                         </div>
-                                    </div>
-                                    {% else %}
+                                    </div> -->
+                                    <!-- {% else %}
                                     <div class="text-center text-muted py-4">
                                         <i class="bi bi-gender-male display-1"></i>
                                         <h5 class="mt-3">No Ram Selected</h5>
@@ -308,9 +1531,9 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </div> -->
 <!-- Add this section after the Selected Ram Display -->
-{% if selected_ram and breed_restrictions %}
+<!-- {% if selected_ram and breed_restrictions %}
 <div class="row mb-4">
     <div class="col-12">
         <div class="card border-info">
@@ -397,8 +1620,8 @@
             </div>
         </div>
     </div>
-</div>
-{% endif %}
+</div> -->
+<!-- {% endif %} -->
                     <!-- Compatible Ewes Section
                     <div class="col-12">
                         <div class="card shadow-sm">
@@ -463,7 +1686,7 @@
 
     </div> -->
     <!-- Update the compatible ewe cards to show breed prediction -->
-<div class="compatible-ewes-grid">
+<!-- <div class="compatible-ewes-grid">
     {% if selected_ram %}
         {% for ewe in compatible_ewes %}
         <div class="card compatible-ewe-card border-success">
@@ -483,7 +1706,7 @@
                         {% else %}
                             Unknown
                         {% endif %}
-                    </p>
+                    </p> -->
                     
                     <!-- Breed Prediction -->
                     {% with lamb_breed=ewe.predicted_lamb_breed lamb_level=ewe.predicted_lamb_level %}
@@ -559,7 +1782,7 @@
         </div>
     </div>
 </div>
-{% endif %}
+{% endif %} 
     <!-- Breeding Modal -->
     <div class="modal fade" id="breedingModal" tabindex="-1" aria-labelledby="breedingModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -700,7 +1923,8 @@
                 const formData = {
                     ewe_id: selectedEweId,
                     ram_id: selectedRamId,
-                    start_date: startDateInput.value
+                    start_date: startDateInput.value,
+                   
                 };
 
                 fetch('/breeding/create-cycle/', {

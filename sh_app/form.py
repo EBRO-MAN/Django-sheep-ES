@@ -66,6 +66,7 @@ class AddRecordForm(forms.ModelForm):
 
 
     health_notes = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Health note", "class": "form-control"}), label="Health Notes")
+    state = forms.ChoiceField(choices=Sheep.STATE_CHOICES, widget=forms.Select(attrs={"class": "form-control"}), label="Sheep State")
     # flagged_for_culling = forms.BooleanField(required=False, widget=forms.CheckboxInput(attrs={"class": "form-check-input"}), label="Flagged for Culling")
     flagged_for_culling = forms.BooleanField(
     label="Flag for Culling?",
@@ -79,3 +80,35 @@ class AddRecordForm(forms.ModelForm):
     class Meta:
         model = Sheep
         exclude = ("user",)
+
+
+# breeding/forms.py
+
+from .models import BreedingCycle
+
+class RamSelectionForm(forms.Form):
+    rams = forms.ModelMultipleChoiceField(
+        queryset=None,
+        widget=forms.CheckboxSelectMultiple,
+        label="Select Rams for Breeding"
+    )
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from .services import get_available_rams
+        self.fields['rams'].queryset = get_available_rams()
+
+class BreedingAssignmentForm(forms.Form):
+    """Form for final breeding assignments"""
+    def __init__(self, *args, **kwargs):
+        ram_ewe_assignments = kwargs.pop('ram_ewe_assignments', {})
+        super().__init__(*args, **kwargs)
+        
+        for ram_id, ewe_list in ram_ewe_assignments.items():
+            for ewe in ewe_list:
+                field_name = f"assign_{ram_id}_{ewe.ear_tag_number}"
+                self.fields[field_name] = forms.BooleanField(
+                    initial=True,
+                    required=False,
+                    label=f"{ewe.ear_tag_number} - {ewe.breed}"
+                )

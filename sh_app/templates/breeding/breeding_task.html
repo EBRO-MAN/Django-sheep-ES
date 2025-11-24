@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Breeding Assignment</h2>
+    
+    <!-- Selected Rams -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Selected Rams</h5>
+        </div>
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-3">
+                {% for ram in rams %}
+                <div class="ram-card bg-light p-3 rounded">
+                    <h6>{{ ram.ear_tag_number }}</h6>
+                    <small>{{ ram.breed }} - {{ ram.get_type_display }}</small>
+                    <br>
+                    <small class="text-muted">Capacity: {{ ram.capacity_info.current }}/{{ ram.capacity_info.max }}</small>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Compatible Ewes by Ram -->
+    <form id="breedingForm" method="post" action="{% url 'breeding_info' %}">
+        {% csrf_token %}
+        <input type="hidden" name="breeding_assignments" id="breedingAssignments">
+        
+        {% for ram, ewes in ram_ewe_assignments.items %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6>Compatible Ewes for {{ ram }}</h6>
+            </div>
+            <div class="card-body">
+                <div class="row" id="ewes-{{ ram }}">
+                    {% for ewe in ewes %}
+                    <div class="col-md-4 mb-2 ewe-item" data-ram="{{ ram }}" data-ewe="{{ ewe.ear_tag_number }}">
+                        <div class="form-check">
+                            <input class="form-check-input ewe-checkbox" type="checkbox" 
+                                   checked data-ram="{{ ram }}" data-ewe="{{ ewe.ear_tag_number }}">
+                            <label class="form-check-label">
+                                {{ ewe.ear_tag_number }} - {{ ewe.breed }} ({{ ewe.get_type_display }})
+                            </label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        
+        <!-- Incompatible/Unmarked Ewes -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Unassigned Ewes</h5>
+            </div>
+            <div class="card-body">
+                <div id="unassignedEwes" class="row">
+                    <!-- Unmarked ewes will appear here via JavaScript -->
+                    {% for ewe in incompatible_ewes %}
+                    <div class="col-md-4 mb-2 unassigned-ewe">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" disabled>
+                            <label class="form-check-label text-muted">
+                                {{ ewe.ear_tag_number }} - {{ ewe.breed }}
+                                <small>(Incompatible)</small>
+                            </label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-success btn-lg">Plan Breeding</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const breedingAssignments = {};
+    
+    // Initialize breeding assignments object
+    // {% for ram in rams %}
+    // breedingAssignments['{{ ram.ear_tag_number }}'] = [];
+    // {% endfor %}
+    
+    // Handle checkbox changes
+    document.querySelectorAll('.ewe-checkbox').forEach(checkbox => {
+        const ram = checkbox.dataset.ram;
+        const ewe = checkbox.dataset.ewe;
+        
+        // Add to initial assignments
+        breedingAssignments[ram].push(ewe);
+        
+        checkbox.addEventListener('change', function() {
+            const eweItem = this.closest('.ewe-item');
+            const unassignedContainer = document.getElementById('unassignedEwes');
+            
+            if (!this.checked) {
+                // Move to unassigned
+                unassignedContainer.appendChild(eweItem);
+                // Remove from assignments
+                breedingAssignments[ram] = breedingAssignments[ram].filter(e => e !== ewe);
+            } else {
+                // Move back to original position
+                const originalContainer = document.getElementById(`ewes-${ram}`);
+                originalContainer.appendChild(eweItem);
+                // Add back to assignments
+                if (!breedingAssignments[ram].includes(ewe)) {
+                    breedingAssignments[ram].push(ewe);
+                }
+            }
+            
+            // Update hidden field
+            document.getElementById('breedingAssignments').value = JSON.stringify(breedingAssignments);
+        });
+    });
+    
+    // Initialize hidden field
+    document.getElementById('breedingAssignments').value = JSON.stringify(breedingAssignments);
+});
+</script> -->
+{% endblock %}

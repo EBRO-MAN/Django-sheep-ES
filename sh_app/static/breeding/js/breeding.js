@@ -129,40 +129,92 @@ function updateBreedPrediction(eweBreed, ramBreed) {
 }
 
     // Form submission
-    breedingForm.addEventListener('submit', function(e) {
-        e.preventDefault();
+    // breedingForm.addEventListener('submit', function(e) {
+    //     e.preventDefault();
         
-        const formData = {
-            ewe_id: selectedEweId,
-            ram_id: selectedRamId,
-            start_date: startDateInput.value
-        };
+    //     const formData = {
+    //         ewe_id: selectedEweId,
+    //         ram_id: selectedRamId,
+    //         start_date: startDateInput.value
+    //     };
 
-        fetch('/breeding/create-cycle/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCookie('csrftoken')
-            },
-            body: JSON.stringify(formData)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showMessage(data.message, 'success');
-                modal.style.display = 'none';
-                // Refresh the page after 2 seconds to show updated data
-                setTimeout(() => {
-                    window.location.reload();
-                }, 2000);
-            } else {
-                showMessage(data.message, 'error');
-            }
-        })
-        .catch(error => {
-            showMessage('An error occurred: ' + error, 'error');
-        });
+    //     fetch('/breeding/create-cycle/', {
+    //         method: 'POST',
+    //         headers: {
+    //             'Content-Type': 'application/json',
+    //             'X-CSRFToken': getCookie('csrftoken')
+    //         },
+    //         body: JSON.stringify(formData)
+    //     })
+    //     .then(response => response.json())
+    //     .then(data => {
+    //         if (data.success) {
+    //             showMessage(data.message, 'success');
+    //             modal.style.display = 'none';
+    //             // Refresh the page after 2 seconds to show updated data
+    //             setTimeout(() => {
+    //                 window.location.reload();
+    //             }, 2000);
+    //         } else {
+    //             showMessage(data.message, 'error');
+    //         }
+    //     })
+    //     .catch(error => {
+    //         showMessage('An error occurred: ' + error, 'error');
+    //     });
+    // });
+    // Form submission
+breedingForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const startDateValue = startDateInput.value;
+    
+    // Basic date validation
+    if (!startDateValue) {
+        showToast('Please select a start date', 'error');
+        return;
+    }
+    
+    // Check if date is in the past
+    const selectedDate = new Date(startDateValue);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (selectedDate < today) {
+        showToast('Start date cannot be in the past', 'error');
+        return;
+    }
+    
+    const formData = {
+        ewe_id: selectedEweId,
+        ram_id: selectedRamId,
+        start_date: startDateValue
+    };
+
+    fetch('create-cycle/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        body: JSON.stringify(formData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message, 'success');
+            modal.style.display = 'none';
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            showToast(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        showToast('An error occurred: ' + error, 'error');
     });
+});
 
     // Utility functions
     function showMessage(text, type) {

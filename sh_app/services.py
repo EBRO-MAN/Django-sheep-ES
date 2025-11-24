@@ -3,20 +3,186 @@ from datetime import datetime
 from django.db.models import Q
 from .models import Sheep, BreedingCycle
 
-def get_available_rams():
-    """Get all healthy rams available for breeding"""
-    return Sheep.objects.filter(
-        sex='MALE', 
-        is_healthy=True,
-        type__in=['RAM', 'YOUNG_RAM']
-    ).select_related('parent_ewe', 'parent_ram')
+
+from datetime import date, timedelta
+from django.db import transaction
+from django.utils import timezone
+import logging
+
+logger = logging.getLogger(__name__)
+# def get_available_rams():
+#     """Get all healthy rams available for breeding"""
+#     return Sheep.objects.filter(
+#         sex='MALE', 
+#         is_healthy=True,
+#         type__in=['RAM']
+#     ).select_related('parent_ewe', 'parent_ram')
 
 def get_available_ewes():
     """Get all healthy ewes available for breeding"""
     return Sheep.objects.filter(
         sex='FEMALE',
         is_healthy=True,
-        type__in=['EWE', 'GIMMER']
+        type__in=['EWE']
+    ).select_related('parent_ewe', 'parent_ram')
+
+# sh_app/services.py
+from django.db.models import Q
+from django.core.exceptions import ValidationError
+from datetime import date
+
+def get_available_rams():
+    """Get all healthy rams available for breeding, sorted by breed priority"""
+    rams = Sheep.objects.filter(
+        sex='male',
+        type__in=['ram'],
+        is_healthy=True
+    )
+    
+    # Sort by breed priority: PD > PA > LOCAL > AC > DC
+    breed_priority = {'PD': 0, 'PA': 1, 'LOCAL': 2, 'AC': 3, 'DC': 4}
+    return sorted(rams, key=lambda ram: breed_priority.get(ram.breed, 5))
+
+# def get_compatible_ewes(ram):
+#     """Get all ewes compatible with a specific ram considering inbreeding and capacity"""
+#     ewes = Sheep.objects.filter(
+#         sex='female',
+#         type__in=['ewe'],
+#         is_healthy=True
+#     )
+    
+#     compatible_ewes = []
+#     for ewe in ewes:
+#         try:
+#             # Check breed compatibility
+#             if not check_breed_compatibility(ram, ewe):
+#                 continue
+            
+#             # Check inbreeding prevention
+#             check_for_inbreeding(ewe, ram)
+            
+#             # Check ram capacity
+#             if check_ram_capacity(ram):
+#                 compatible_ewes.append(ewe)
+                
+#         except ValidationError:
+#             # Skip incompatible pairs due to inbreeding
+#             continue
+    
+#     return compatible_ewes
+
+# services.py
+
+def get_compatible_ewes(ram):
+    """Get all ewes compatible with a specific ram considering inbreeding and capacity"""
+    # ... existing query ...
+    ewes = Sheep.objects.filter(
+        sex='female',
+        type__in=['ewe'],
+        is_healthy=True
+    )
+
+    compatible_ewes = []
+    for ewe in ewes:
+        try:
+            # 1. Check breed compatibility
+            if not check_breed_compatibility(ram, ewe):
+                continue
+            
+            # 2. FIX: Explicitly check if inbreeding returns False
+            if not check_for_inbreeding(ewe, ram):
+                continue
+            
+            # 3. Check ram capacity
+            if check_ram_capacity(ram):
+                compatible_ewes.append(ewe)
+                
+        except ValidationError:
+            continue
+    
+    return compatible_ewes
+
+def distribute_ewes_by_priority(rams, all_compatible_ewes):
+    """
+    Distribute ewes among rams with breed priority (PD > PA > LOCAL)
+    and ensure no duplicate assignments
+    """
+    if not rams or not all_compatible_ewes:
+        return {}
+    
+    # Sort rams by breed priority
+    breed_priority = {'PD': 0, 'PA': 1, 'LOCAL': 2, 'AC': 3, 'DC': 4}
+    sorted_rams = sorted(rams, key=lambda ram: breed_priority.get(ram.breed, 5))
+    
+    assignments = {}
+    assigned_ewes = set()  # Track already assigned ewes to prevent duplicates
+    
+    # Initialize assignments
+    for ram in sorted_rams:
+        assignments[ram.ear_tag_number] = []
+    
+    # First pass: Assign ewes to PD rams
+    for ram in sorted_rams:
+        if ram.breed != 'PD':
+            continue
+            
+        ram_capacity = get_ram_capacity_info(ram)['remaining']
+        compatible_ewes = get_compatible_ewes(ram)
+        
+        for ewe in compatible_ewes:
+            if ewe.ear_tag_number not in assigned_ewes and len(assignments[ram.ear_tag_number]) < ram_capacity:
+                assignments[ram.ear_tag_number].append(ewe)
+                assigned_ewes.add(ewe.ear_tag_number)
+    
+    # Second pass: Assign ewes to PA rams
+    for ram in sorted_rams:
+        if ram.breed != 'PA':
+            continue
+            
+        ram_capacity = get_ram_capacity_info(ram)['remaining']
+        compatible_ewes = get_compatible_ewes(ram)
+        
+        for ewe in compatible_ewes:
+            if ewe.ear_tag_number not in assigned_ewes and len(assignments[ram.ear_tag_number]) < ram_capacity:
+                assignments[ram.ear_tag_number].append(ewe)
+                assigned_ewes.add(ewe.ear_tag_number)
+    
+    # Third pass: Assign ewes to LOCAL rams
+    for ram in sorted_rams:
+        if ram.breed != 'LOCAL':
+            continue
+            
+        ram_capacity = get_ram_capacity_info(ram)['remaining']
+        compatible_ewes = get_compatible_ewes(ram)
+        
+        for ewe in compatible_ewes:
+            if ewe.ear_tag_number not in assigned_ewes and len(assignments[ram.ear_tag_number]) < ram_capacity:
+                assignments[ram.ear_tag_number].append(ewe)
+                assigned_ewes.add(ewe.ear_tag_number)
+    
+    return assignments
+
+# Keep all your existing functions (check_breed_compatibility, check_for_inbreeding, etc.)
+
+def get_available_lambs():
+    """Get all healthy lambs available for breeding"""
+    return Sheep.objects.filter(
+        
+        type__in=["LAMB"]
+    ).select_related('parent_ewe', 'parent_ram')
+
+def get_available_gimmers():
+    """Get all healthy gimmers available for breeding"""
+    return Sheep.objects.filter(
+        
+        type__in=["GIMMER"]
+    ).select_related('parent_ewe', 'parent_ram')
+
+def get_available_young_rams():
+    """Get all healthy young rams available for breeding"""
+    return Sheep.objects.filter(
+        
+        type__in=["YOUNG_RAM"]
     ).select_related('parent_ewe', 'parent_ram')
 
 def check_breed_compatibility(ram, ewe):
@@ -88,23 +254,23 @@ def predict_lamb_breed(ewe, ram):
     
     return None, None  # Manual input required
 
-def get_compatible_ewes(selected_ram):
-    """
-    Filter ewes that are compatible based on both breed rules and family relationships
-    """
-    all_ewes = get_available_ewes()
-    compatible_ewes = []
+# def get_compatible_ewes(selected_ram):
+#     """
+#     Filter ewes that are compatible based on both breed rules and family relationships
+#     """
+#     all_ewes = get_available_ewes()
+#     compatible_ewes = []
     
-    for ewe in all_ewes:
-        # Check breed compatibility first (faster check)
-        if not check_breed_compatibility(selected_ram, ewe):
-            continue
+#     for ewe in all_ewes:
+#         # Check breed compatibility first (faster check)
+#         if not check_breed_compatibility(selected_ram, ewe):
+#             continue
         
-        # Then check inbreeding prevention
-        if check_for_inbreeding(ewe, selected_ram):
-            compatible_ewes.append(ewe)
+#         # Then check inbreeding prevention
+#         if check_for_inbreeding(ewe, selected_ram):
+#             compatible_ewes.append(ewe)
     
-    return compatible_ewes
+#     return compatible_ewes
 
 def get_breed_restrictions(ram):
     """
@@ -408,24 +574,258 @@ def get_family_relationship(ewe, ram):
     
     return relationships if relationships else ["No close relationship detected"]
 
-def check_ram_capacity(ram, start_date):
-    """Check if ram has exceeded breeding capacity for the season"""
-    breed_capacity = {
+# def check_ram_capacity(ram, start_date):
+#     """Check if ram has exceeded breeding capacity for the season"""
+#     breed_capacity = {
+#         'PD': 55,
+#         'PA': 40,
+#         'LOCAL': 40,
+#         'AC': 40,
+#         'DC': 40,
+#     }
+    
+#     season_start = datetime(start_date.year, 1, 1).date()
+#     season_end = datetime(start_date.year, 12, 31).date()
+    
+#     current_cycles = BreedingCycle.objects.filter(
+#         ram=ram,
+#         start_date__range=[season_start, season_end],
+#         status__in=['PLANNED', 'IN_PROGRESS']
+#     ).count()
+    
+#     capacity = breed_capacity.get(ram.breed, 40)
+#     return current_cycles < capacity
+
+def check_ram_capacity(ram, breeding_season=None):
+    """Check if ram has reached breeding capacity for the season"""
+    from .models import BreedingCycle
+    
+    # Use current year if no breeding_season provided
+    if breeding_season is None:
+        breeding_season = date.today()
+    
+    CAPACITY_RULES = {
         'PD': 55,
         'PA': 40,
         'LOCAL': 40,
-        'AC': 40,
-        'DC': 40,
     }
-    
-    season_start = datetime(start_date.year, 1, 1).date()
-    season_end = datetime(start_date.year, 12, 31).date()
     
     current_cycles = BreedingCycle.objects.filter(
         ram=ram,
-        start_date__range=[season_start, season_end],
-        status__in=['PLANNED', 'IN_PROGRESS']
+        start_date__year=breeding_season.year,
+        status__in=['planned', 'in_progress']
     ).count()
     
-    capacity = breed_capacity.get(ram.breed, 40)
+    capacity = CAPACITY_RULES.get(ram.breed, 0)
     return current_cycles < capacity
+
+def get_ram_capacity_info(ram, breeding_season=None):
+    """Get current capacity usage for a ram"""
+    from .models import BreedingCycle
+    
+    # Use current year if no breeding_season provided
+    if breeding_season is None:
+        breeding_season = date.today()
+    
+    CAPACITY_RULES = {
+        'PD': 55,
+        'PA': 40,
+        'LOCAL': 40,
+    }
+    
+    current_cycles = BreedingCycle.objects.filter(
+        ram=ram,
+        start_date__year=breeding_season.year,
+        status__in=['planned', 'in_progress']
+    ).count()
+    
+    capacity = CAPACITY_RULES.get(ram.breed, 0)
+    return {
+        'current': current_cycles,
+        'max': capacity,
+        'remaining': capacity - current_cycles
+    }
+
+
+def create_lambs_from_cycle(breeding_cycle, lamb_count=1, lamb_sexes=None):
+    """
+    Automatically create lamb records from a breeding cycle
+    lamb_sexes: List of sexes for each lamb (e.g., ['MALE', 'FEMALE'])
+    """
+    from .models import Sheep, AuditLog
+    
+    if not breeding_cycle.actual_birth_date:
+        raise ValueError("Cannot create lambs without actual birth date")
+    
+    if lamb_sexes is None:
+        lamb_sexes = ['UNKNOWN'] * lamb_count
+    
+    lambs = []
+    with transaction.atomic():
+        for i, sex in enumerate(lamb_sexes):
+            lamb_breed, lamb_level = predict_lamb_breed(breeding_cycle.ewe, breeding_cycle.ram)
+            
+            lamb = Sheep.objects.create(
+                ear_tag_number=f"LAMB_{breeding_cycle.cycle_id}_{i+1}",
+                breed=lamb_breed,
+                breed_level=lamb_level,
+                sex=sex,
+                type='LAMB',
+                date_of_birth=breeding_cycle.actual_birth_date,
+                parent_ewe=breeding_cycle.ewe,
+                parent_ram=breeding_cycle.ram,
+                is_healthy=True
+            )
+            lambs.append(lamb)
+            
+            # Log creation
+            AuditLog.objects.create(
+                user_id='SYSTEM',
+                action='AUTO_CREATE_LAMB',
+                entity='Sheep',
+                entity_id=lamb.ear_tag_number,
+                new_values={
+                    'ear_tag_number': lamb.ear_tag_number,
+                    'breed': lamb.breed,
+                    'breed_level': lamb.breed_level,
+                    'parent_ewe': breeding_cycle.ewe.ear_tag_number,
+                    'parent_ram': breeding_cycle.ram.ear_tag_number
+                },
+                notes=f"Automatically created from breeding cycle {breeding_cycle.cycle_id}"
+            )
+    
+    return lambs
+
+def update_cycle_statuses():
+    """
+    Batch update breeding cycle statuses based on current dates
+    """
+    today = date.today()
+    updated_count = 0
+    
+    # Update PLANNED → IN_PROGRESS
+    planned_to_update = BreedingCycle.objects.filter(
+        status='PLANNED',
+        start_date__lte=today
+    )
+    
+    for cycle in planned_to_update:
+        cycle.status = 'IN_PROGRESS'
+        cycle.save()
+        updated_count += 1
+    
+    return updated_count
+
+def get_upcoming_births(days=30):
+    """
+    Get breeding cycles with expected births in the next specified days
+    """
+    today = date.today()
+    end_date = today + timedelta(days=days)
+    
+    return BreedingCycle.objects.filter(
+        status='IN_PROGRESS',
+        expected_birth_date__range=[today, end_date]
+    ).select_related('ewe', 'ram').order_by('expected_birth_date')
+
+def check_ram_utilization():
+    """
+    Check ram capacity utilization and return warnings for over-utilized rams
+    """
+    rams = Sheep.objects.filter(sex='MALE', type__in=['RAM', 'YOUNG_RAM'])
+    warnings = []
+    
+    for ram in rams:
+        active_cycles = BreedingCycle.objects.filter(
+            ram=ram,
+            status__in=['PLANNED', 'IN_PROGRESS']
+        ).count()
+        
+        capacity = 55 if ram.breed == 'PD' else 40
+        
+        if active_cycles >= capacity:
+            warnings.append({
+                'ram': ram,
+                'active_cycles': active_cycles,
+                'capacity': capacity,
+                'message': f"Ram {ram.ear_tag_number} at or over capacity ({active_cycles}/{capacity})"
+            })
+        elif active_cycles >= capacity * 0.8:  # 80% threshold warning
+            warnings.append({
+                'ram': ram,
+                'active_cycles': active_cycles,
+                'capacity': capacity,
+                'message': f"Ram {ram.ear_tag_number} approaching capacity ({active_cycles}/{capacity})"
+            })
+    
+    return warnings
+
+def generate_breeding_season_report(season_year):
+    """
+    Generate comprehensive breeding season report
+    """
+    from django.db.models import Count, Avg, Q
+    
+    cycles = BreedingCycle.objects.filter(
+        start_date__year=season_year
+    ).select_related('ewe', 'ram')
+    
+    # Basic statistics
+    total_cycles = cycles.count()
+    completed_cycles = cycles.filter(status='COMPLETED').count()
+    cancelled_cycles = cycles.filter(status='CANCELLED').count()
+    
+    # Success rate
+    success_rate = (completed_cycles / total_cycles * 100) if total_cycles > 0 else 0
+    
+    # Average gestation period
+    completed_with_births = cycles.filter(
+        status='COMPLETED',
+        actual_birth_date__isnull=False
+    )
+    
+    gestation_periods = [
+        (cycle.actual_birth_date - cycle.start_date).days
+        for cycle in completed_with_births
+    ]
+    avg_gestation = sum(gestation_periods) / len(gestation_periods) if gestation_periods else 0
+    
+    # Ram performance
+    ram_performance = cycles.filter(status='COMPLETED').values(
+        'ram__ear_tag_number', 'ram__breed'
+    ).annotate(
+        total_cycles=Count('cycle_id'),
+        success_rate=Count('cycle_id', filter=Q(status='COMPLETED')) * 100.0 / Count('cycle_id')
+    )
+    
+    # Breed distribution
+    breed_distribution = cycles.filter(status='COMPLETED').values(
+        'ewe__breed', 'ram__breed'
+    ).annotate(count=Count('cycle_id'))
+    
+    report_data = {
+        'season_year': season_year,
+        'total_cycles': total_cycles,
+        'completed_cycles': completed_cycles,
+        'cancelled_cycles': cancelled_cycles,
+        'success_rate': round(success_rate, 2),
+        'average_gestation': round(avg_gestation, 2),
+        'ram_performance': list(ram_performance),
+        'breed_distribution': list(breed_distribution),
+        'generated_at': timezone.now().isoformat()
+    }
+    
+    return report_data
+
+
+def get_ram_ewe_compatibility(ram):
+    """
+    Get detailed compatibility information for a ram
+    """
+    compatible_ewes = get_compatible_ewes(ram)
+    
+    return {
+        'ram': ram,
+        'compatible_ewes': compatible_ewes,
+        'total_compatible': len(compatible_ewes)
+    }
