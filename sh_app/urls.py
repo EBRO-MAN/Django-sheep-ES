@@ -47,4 +47,13 @@ urlpatterns = [
     # urls.py example
     path('breeding/process-selection/', views.process_ram_selection, name='process_ram_selection'),
     path('breeding/task/', views.BreedingTaskView.as_view(), name='breeding_task'),
+    # path('import_sheep_csv/', views.import_sheep_csv, name='import_sheep_csv'),
+    # path('download_csv_template/', views.download_csv_template, name='download_csv_template'),
+    # path('export_sheep_csv/', views.export_sheep_csv, name='export_sheep_csv'),
+    
+    # path('sheep/import/', views.import_sheep_csv, name='import_sheep_csv'),
+    # path('sheep/import/sample/', views.download_sample_csv, name='download_sample_csv'),
+    # path('sheep/', views.sheep_list, name='sheep_list'),
+
+    path('import-csv/', views.import_sheep_csv, name='import_sheep_csv'),
 ]

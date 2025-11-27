@@ -112,3 +112,18 @@ class BreedingAssignmentForm(forms.Form):
                     required=False,
                     label=f"{ewe.ear_tag_number} - {ewe.breed}"
                 )
+
+
+# form.py (Append this class)
+
+class CSVImportForm(forms.Form):
+    csv_file = forms.FileField(
+        label="Select CSV File",
+        help_text="Upload a CSV file containing sheep records."
+    )
+    update_existing = forms.BooleanField(
+        required=False,
+        initial=False,
+        label="Update Existing Records",
+        help_text="If checked, records with matching Ear Tags will be updated. Otherwise, they will be skipped."
+    )

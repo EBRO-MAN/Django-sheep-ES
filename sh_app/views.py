@@ -9,17 +9,1263 @@ from .form import AddRecordForm
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from datetime import datetime
+# from datetime import datetime
+import datetime
+from datetime import date, timedelta
 from django.http import JsonResponse
 from .models import Sheep, BreedingCycle, AuditLog
 from .services import (get_available_rams, get_available_lambs,get_available_ewes, get_available_gimmers,get_available_young_rams, get_compatible_ewes, get_ram_capacity_info, 
                       get_family_relationship, distribute_ewes_by_priority, check_breed_compatibility, check_for_inbreeding,
                       predict_lamb_breed, get_breed_compatibility_info, )
 import json
+from django.db import transaction
 
 import logging
 
+
+
 logger = logging.getLogger(__name__)
+
+
+
+# views.py (Add these imports and the function)
+
+import csv
+import io
+from datetime import datetime
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from .form import CSVImportForm
+from .models import Sheep
+
+# views.py
+
+
+# views.py
+
+@login_required
+def import_sheep_csv(request):
+    """View for importing sheep data from CSV with robust handling"""
+    if request.method == 'POST':
+        form = CSVImportForm(request.POST, request.FILES)
+        if form.is_valid():
+            csv_file = form.cleaned_data['csv_file']
+            update_existing = form.cleaned_data['update_existing']
+            
+            try:
+                # 1. Read and Normalize Line Endings (\r -> \n)
+                # This fixes the "271120152.csv" crash
+                data_set = csv_file.read().decode('UTF-8').replace('\r\n', '\n').replace('\r', '\n')
+                io_string = io.StringIO(data_set)
+                
+                # 2. Use DictReader to map columns by name (Robust to order changes)
+                reader = csv.DictReader(io_string)
+                
+                # Normalize headers: remove spaces, lower case, fix typos
+                # e.g. "ear_tag number" -> "ear_tag_number", "Birth_weght" -> "birth_weight"
+                field_map = {}
+                for field in reader.fieldnames:
+                    clean_field = field.strip().lower().replace(' ', '_').replace('__', '_')
+                    # Fix specific typos found in your file
+                    if 'weght' in clean_field: clean_field = 'birth_weight'
+                    if 'note' in clean_field: clean_field = 'health_notes'
+                    field_map[clean_field] = field
+
+                success_count = 0
+                error_count = 0
+                errors = []
+                
+                for row_num, row in enumerate(reader, start=2):
+                    try:
+                        # Helper to safely get data using normalized names
+                        def get_val(key):
+                            col_name = field_map.get(key)
+                            if col_name and row.get(col_name):
+                                return row[col_name].strip()
+                            return None
+
+                        # 3. Extract Data
+                        ear_tag = get_val('ear_tag_number') or get_val('ear_tag')
+                        if not ear_tag:
+                            raise ValueError("Missing Ear Tag")
+
+                        breed = (get_val('breed') or '').upper()
+                        
+                        # Handle float parsing safely
+                        try:
+                            breed_lvl_str = get_val('breed_level')
+                            breed_level = float(breed_lvl_str) if breed_lvl_str else 0.0
+                        except ValueError:
+                            breed_level = 0.0
+
+                        sex = (get_val('sex') or '').upper()
+                        sheep_type = (get_val('type') or '').upper()
+                        
+                        # Handle Dates (Multiple formats)
+                        dob_str = get_val('date_of_birth')
+                        date_of_birth = None
+                        if dob_str:
+                            for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%Y/%m/%d'):
+                                try:
+                                    date_of_birth = datetime.strptime(dob_str, fmt).date()
+                                    break
+                                except ValueError:
+                                    continue
+
+                        # Handle Weights
+                        try:
+                            bw_str = get_val('birth_weight')
+                            birth_weight = float(bw_str) if bw_str else None
+                        except ValueError:
+                            birth_weight = None
+
+                        try:
+                            sw_str = get_val('separation_weight')
+                            sep_weight = float(sw_str) if sw_str else None
+                        except ValueError:
+                            sep_weight = None
+
+                        # Handle Parents
+                        parent_ram_tag = get_val('parent_ram')
+                        parent_ewe_tag = get_val('parent_ewe')
+                        
+                        parent_ram = Sheep.objects.filter(ear_tag_number=parent_ram_tag).first() if parent_ram_tag else None
+                        parent_ewe = Sheep.objects.filter(ear_tag_number=parent_ewe_tag).first() if parent_ewe_tag else None
+
+                        # Handle Boolean
+                        healthy_str = get_val('is_healthy')
+                        is_healthy = str(healthy_str).lower() in ['true', 'yes', '1', 'y'] if healthy_str else True
+
+                        # 4. Save to Database
+                        defaults = {
+                            'breed': breed,
+                            'breed_level': breed_level,
+                            'sex': sex,
+                            'type': sheep_type,
+                            'date_of_birth': date_of_birth,
+                            'birth_weight': birth_weight,
+                            'separation_weight': sep_weight,
+                            'parent_ram': parent_ram,
+                            'parent_ewe': parent_ewe,
+                            'is_healthy': is_healthy
+                        }
+
+                        obj, created = Sheep.objects.update_or_create(
+                            ear_tag_number=ear_tag,
+                            defaults=defaults
+                        )
+                        
+                        if created or update_existing:
+                            success_count += 1
+
+                    except Exception as e:
+                        error_count += 1
+                        errors.append(f"Row {row_num} ({ear_tag if 'ear_tag' in locals() else 'Unknown'}): {str(e)}")
+
+                if success_count > 0:
+                    messages.success(request, f'Successfully processed {success_count} records.')
+                if error_count > 0:
+                    messages.warning(request, f'Failed on {error_count} records.')
+                    for err in errors[:5]:
+                        messages.error(request, err)
+                
+                return redirect('home')
+
+            except Exception as e:
+                messages.error(request, f'Critical Error: {str(e)}')
+    else:
+        form = CSVImportForm()
+    
+    return render(request, 'import_sheep_csv.html', {'form': form})
+
+# @login_required
+# def import_sheep_csv(request):
+#     """View for importing sheep data from CSV"""
+#     if request.method == 'POST':
+#         form = CSVImportForm(request.POST, request.FILES)
+#         if form.is_valid():
+#             csv_file = form.cleaned_data['csv_file']
+#             update_existing = form.cleaned_data['update_existing']
+            
+#             try:
+#                 # Read the CSV file
+#                 data_set = csv_file.read().decode('UTF-8')
+#                 io_string = io.StringIO(data_set)
+                
+#                 # Skip header row
+#                 next(io_string)
+                
+#                 success_count = 0
+#                 error_count = 0
+#                 errors = []
+                
+#                 for row_num, row in enumerate(csv.reader(io_string, delimiter=','), start=2):
+#                     try:
+#                         # 1. Basic Fields (Existing)
+#                         ear_tag_number = row[0].strip() if len(row) > 0 else ''
+#                         breed = row[1].strip().upper() if len(row) > 1 else ''
+#                         breed_level = float(row[2]) if len(row) > 2 and row[2] else 0.0 # Changed to float
+#                         sex = row[3].strip().upper() if len(row) > 3 else ''
+#                         sheep_type = row[4].strip().upper() if len(row) > 4 else ''
+                        
+#                         # 2. Date of Birth
+#                         date_of_birth = None
+#                         if len(row) > 5 and row[5]:
+#                             try:
+#                                 date_of_birth = datetime.strptime(row[5], '%Y-%m-%d').date()
+#                             except ValueError:
+#                                 try:
+#                                     date_of_birth = datetime.strptime(row[5], '%d/%m/%Y').date()
+#                                 except ValueError:
+#                                     date_of_birth = None
+
+#                         # /////////////////
+
+#                         is_healthy = row[11].strip().lower() in ['true', 'yes', '1', 'y'] if len(row) > 6 and row[6] else True
+
+#                         # --- NEW: Extended Fields (Missing parts) ---
+                        
+#                         # 3. Birth Weight (Column 8 / Index 7)
+#                         birth_weight = None
+#                         if len(row) > 6 and row[6]:
+#                             try:
+#                                 birth_weight = float(row[6])
+#                             except ValueError:
+#                                 birth_weight = None
+
+#                         # 4. Parent Ram (Father) - Look up the object
+#                         parent_ram = None
+#                         if len(row) > 10 and row[10]:
+#                             parent_ram_tag = row[10].strip()
+#                             parent_ram = Sheep.objects.filter(ear_tag_number=parent_ram_tag).first()
+#                             # Optional: You could log a warning if parent not found
+                        
+#                         # 5. Parent Ewe (Mother) - Look up the object
+#                         parent_ewe = None
+#                         if len(row) > 9 and row[9]:
+#                             parent_ewe_tag = row[9].strip()
+#                             parent_ewe = Sheep.objects.filter(ear_tag_number=parent_ewe_tag).first()
+
+#                         # 6. Separation Info (Optional columns if they exist)
+#                         separation_date = None
+#                         if len(row) > 7 and row[7]:
+#                              try:
+#                                 separation_date = datetime.strptime(row[7], '%Y-%m-%d').date()
+#                              except ValueError:
+#                                 pass
+                        
+#                         separation_weight = None
+#                         if len(row) > 8 and row[8]:
+#                              try:
+#                                 separation_weight = float(row[8])
+#                              except ValueError:
+#                                 pass
+
+#                         # --- End Extended Fields ---
+
+#                         # Validation
+#                         if not ear_tag_number or not breed:
+#                             errors.append(f"Row {row_num}: Missing Ear Tag or Breed")
+#                             error_count += 1
+#                             continue
+                        
+#                         # Prepare data dictionary
+#                         defaults = {
+#                             'breed': breed,
+#                             'breed_level': breed_level,
+#                             'sex': sex,
+#                             'type': sheep_type,
+#                             'date_of_birth': date_of_birth,
+#                             'is_healthy': is_healthy,
+#                             # Add the new fields here
+#                             'birth_weight': birth_weight,
+#                             'parent_ram': parent_ram,
+#                             'parent_ewe': parent_ewe,
+#                             'separation_date': separation_date,
+#                             'separation_weight': separation_weight,
+#                         }
+
+#                         # Save to Database
+#                         obj, created = Sheep.objects.update_or_create(
+#                             ear_tag_number=ear_tag_number,
+#                             defaults=defaults
+#                         )
+                        
+#                         if created or update_existing:
+#                             success_count += 1
+#                         else:
+#                             # If not created and not updating, we technically skipped it
+#                             pass 
+
+#                     except Exception as e:
+#                         errors.append(f"Row {row_num}: {str(e)}")
+#                         error_count += 1
+                
+#                 # Messages
+#                 if success_count > 0:
+#                     messages.success(request, f'Successfully processed {success_count} sheep records.')
+#                 if error_count > 0:
+#                     messages.warning(request, f'Encounters {error_count} errors.')
+#                     for error in errors[:5]:
+#                         messages.error(request, error)
+                
+#                 return redirect('home')
+                
+#             except Exception as e:
+#                 messages.error(request, f'Error reading CSV file: {str(e)}')
+#     else:
+#         form = CSVImportForm()
+    
+#     return render(request, 'import_sheep_csv.html', {'form': form})
+
+import csv
+import io
+from datetime import datetime
+from django.contrib import messages
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponse
+# from .form import CSVImportForm, BreedingCSVImportForm, ExportSelectionForm
+
+# @login_required
+# def import_sheep_csv(request):
+#     """View for importing sheep data from CSV"""
+#     if request.method == 'POST':
+#         form = CSVImportForm(request.POST, request.FILES)
+#         if form.is_valid():
+#             csv_file = form.cleaned_data['csv_file']
+#             update_existing = form.cleaned_data['update_existing']
+            
+#             try:
+#                 # Read the CSV file
+#                 data_set = csv_file.read().decode('UTF-8')
+#                 io_string = io.StringIO(data_set)
+                
+#                 # Skip header row
+#                 next(io_string)
+                
+#                 # Process each row
+#                 success_count = 0
+#                 error_count = 0
+#                 errors = []
+                
+#                 for row_num, row in enumerate(csv.reader(io_string, delimiter=','), start=2):
+#                     try:
+#                         # Map CSV columns to model fields
+#                         ear_tag_number = row[0].strip() if len(row) > 0 else ''
+#                         breed = row[1].strip().upper() if len(row) > 1 else ''
+#                         breed_level = int(row[2]) if len(row) > 2 and row[2] else 0
+#                         sex = row[3].strip().upper() if len(row) > 3 else ''
+#                         sheep_type = row[4].strip().upper() if len(row) > 4 else ''
+                        
+#                         # Parse date (handle different formats)
+#                         date_of_birth = None
+#                         if len(row) > 5 and row[5]:
+#                             try:
+#                                 date_of_birth = datetime.strptime(row[5], '%Y-%m-%d').date()
+#                             except ValueError:
+#                                 try:
+#                                     date_of_birth = datetime.strptime(row[5], '%d/%m/%Y').date()
+#                                 except ValueError:
+#                                     date_of_birth = None
+                        
+#                         is_healthy = row[6].strip().lower() in ['true', 'yes', '1', 'y'] if len(row) > 6 and row[6] else True
+                        
+#                         # Validate required fields
+#                         if not ear_tag_number:
+#                             errors.append(f"Row {row_num}: Ear tag number is required")
+#                             error_count += 1
+#                             continue
+                        
+#                         if not breed:
+#                             errors.append(f"Row {row_num}: Breed is required")
+#                             error_count += 1
+#                             continue
+                        
+#                         # Check if sheep already exists
+#                         if update_existing and Sheep.objects.filter(ear_tag_number=ear_tag_number).exists():
+#                             # Update existing record
+#                             sheep = Sheep.objects.get(ear_tag_number=ear_tag_number)
+#                             sheep.breed = breed
+#                             sheep.breed_level = breed_level
+#                             sheep.sex = sex
+#                             sheep.type = sheep_type
+#                             if date_of_birth:
+#                                 sheep.date_of_birth = date_of_birth
+#                             sheep.is_healthy = is_healthy
+#                             sheep.save()
+#                             success_count += 1
+#                         else:
+#                             # Create new record (don't duplicate)
+#                             if not Sheep.objects.filter(ear_tag_number=ear_tag_number).exists():
+#                                 sheep = Sheep(
+#                                     ear_tag_number=ear_tag_number,
+#                                     breed=breed,
+#                                     breed_level=breed_level,
+#                                     sex=sex,
+#                                     type=sheep_type,
+#                                     date_of_birth=date_of_birth,
+#                                     is_healthy=is_healthy
+#                                 )
+#                                 sheep.save()
+#                                 success_count += 1
+#                             else:
+#                                 errors.append(f"Row {row_num}: Sheep with ear tag {ear_tag_number} already exists")
+#                                 error_count += 1
+                                
+#                     except IndexError:
+#                         errors.append(f"Row {row_num}: Insufficient columns")
+#                         error_count += 1
+#                     except ValueError as e:
+#                         errors.append(f"Row {row_num}: Invalid data - {str(e)}")
+#                         error_count += 1
+#                     except Exception as e:
+#                         errors.append(f"Row {row_num}: Error - {str(e)}")
+#                         error_count += 1
+                
+#                 # Show results
+#                 if success_count > 0:
+#                     messages.success(request, f'Successfully imported/updated {success_count} sheep records')
+#                 if error_count > 0:
+#                     messages.warning(request, f'Failed to import {error_count} records. Check errors below.')
+#                     for error in errors[:10]:  # Show first 10 errors
+#                         messages.error(request, error)
+#                     if len(errors) > 10:
+#                         messages.info(request, f'... and {len(errors) - 10} more errors')
+                
+#                 return redirect('home')
+                
+#             except Exception as e:
+#                 messages.error(request, f'Error reading CSV file: {str(e)}')
+#     else:
+#         form = CSVImportForm()
+    
+#     return render(request, 'import_sheep_csv.html', {'form': form})
+
+# views.py
+import csv
+import io
+from datetime import datetime
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
+from django.core.exceptions import ValidationError
+from .models import Sheep, AuditLog, User
+from .form import CSVImportForm, AddRecordForm
+
+# @login_required
+# def sheep_list(request):
+#     """View for listing all sheep"""
+#     sheeps = Sheep.objects.all()
+#     return render(request, 'sheep_list.html', {'sheeps': sheeps})
+
+# @login_required
+# def import_sheep_csv(request):
+#     """
+#     View for importing sheep records from CSV file
+#     """
+#     context = {}
+    
+#     if request.method == 'POST':
+#         form = CSVImportForm(request.POST, request.FILES)
+        
+#         if form.is_valid():
+#             csv_file = request.FILES['csv_file']
+#             update_existing = form.cleaned_data['update_existing']
+            
+#             # Pass the entire user object instead of just ID
+#             import_results = process_sheep_csv(csv_file, update_existing, request.user)
+#             context['import_results'] = import_results
+            
+#             # Show appropriate messages
+#             if import_results['errors']:
+#                 messages.error(request, f"Import completed with {len(import_results['errors'])} error(s)")
+#             else:
+#                 messages.success(request, f"Successfully imported {len(import_results['created'])} new records and updated {len(import_results['updated'])} records")
+                
+#             # Re-initialize form for new import
+#             context['form'] = CSVImportForm()
+#         else:
+#             context['form'] = form
+#             messages.error(request, "Please correct the errors below")
+#     else:
+#         context['form'] = CSVImportForm()
+    
+#     return render(request, 'import_sheep_csv.html', context)
+# @login_required
+# def import_sheep_csv(request):
+#     """
+#     View for importing sheep records from CSV file
+#     """
+#     context = {}
+    
+#     if request.method == 'POST':
+#         form = CSVImportForm(request.POST, request.FILES)
+        
+#         if form.is_valid():
+#             csv_file = request.FILES['csv_file']
+#             update_existing = form.cleaned_data['update_existing']
+            
+#             # Process the CSV file
+#             import_results = process_sheep_csv(csv_file, update_existing, request.user.user_id)
+#             context['import_results'] = import_results
+            
+#             # Show appropriate messages
+#             if import_results['errors']:
+#                 messages.error(request, f"Import completed with {len(import_results['errors'])} error(s)")
+#             else:
+#                 messages.success(request, f"Successfully imported {len(import_results['created'])} new records and updated {len(import_results['updated'])} records")
+                
+#             # Re-initialize form for new import
+#             context['form'] = CSVImportForm()
+#         else:
+#             context['form'] = form
+#             messages.error(request, "Please correct the errors below")
+#     else:
+#         context['form'] = CSVImportForm()
+    
+#     return render(request, 'import_sheep_csv.html', context)
+
+# def process_sheep_csv(csv_file, update_existing, user_id):
+#     """
+#     Process the uploaded CSV file and create/update sheep records
+#     """
+#     print(f"DEBUG: Received user_id: {user_id}, type: {type(user_id)}")
+
+#     results = {
+#         'created': [],
+#         'updated': [],
+#         'skipped': [],
+#         'errors': []
+#     }
+#     try:
+#         user = User.objects.get(user_id=user_id)
+#         print(f"DEBUG: Found user: {user}, user_id: {user.user_id}")
+#     except User.DoesNotExist:
+        
+#         print(f"DEBUG: User with user_id '{user_id}' not found")
+#         users = User.objects.all()
+#         if users.exists():
+#             user = users.first()
+#             print(f"DEBUG: Using fallback user: {user}")
+#         else:
+#             results['errors'].append("No users found in system")
+#             return results
+        
+#     except Exception as e:
+#         print(f"DEBUG: Error finding user: {e}")
+#         results['errors'].append(f"Error finding user: {e}")
+#         return results
+
+#     # Get the user instance from the ID
+#     try:
+#         user = User.objects.get(user_id=user_id)
+#     except User.DoesNotExist:
+#         results['errors'].append("User not found")
+#         return results
+    
+#     # Read the CSV file
+#     try:
+#         # Handle both text and binary file uploads
+#         if hasattr(csv_file, 'read'):
+#             file_data = csv_file.read().decode('utf-8')
+#         else:
+#             file_data = csv_file
+            
+#         io_string = io.StringIO(file_data)
+#         reader = csv.DictReader(io_string)
+        
+#         # Validate required columns
+#         required_columns = ['ear_tag_number', 'breed', 'breed_level', 'sex', 'type']
+#         missing_columns = [col for col in required_columns if col not in reader.fieldnames]
+        
+#         if missing_columns:
+#             results['errors'].append(f"Missing required columns: {', '.join(missing_columns)}")
+#             return results
+        
+#         # Process each row
+#         for row_num, row in enumerate(reader, start=2):  # start=2 to account for header row
+#             # Initialize ear_tag here so it's available in exception blocks
+#             ear_tag = 'Unknown'
+#             try:
+#                 with transaction.atomic():
+#                     # Clean and validate row data
+#                     cleaned_data = clean_sheep_row_data(row)
+                    
+#                     # Get ear_tag from cleaned data
+#                     ear_tag = cleaned_data['ear_tag_number']
+                    
+#                     # Check if sheep already exists
+#                     existing_sheep = None
+#                     try:
+#                         existing_sheep = Sheep.objects.get(ear_tag_number=ear_tag)
+#                     except Sheep.DoesNotExist:
+#                         existing_sheep = None
+                    
+#                     # Handle existing records based on update_existing flag
+#                     if existing_sheep:
+#                         if update_existing:
+#                             # Update existing record
+#                             sheep = update_sheep_record(existing_sheep, cleaned_data)
+#                             results['updated'].append(sheep)
+                            
+#                             # Log the update
+#                             AuditLog.objects.create(
+#                                 user=user,
+#                                 action='UPDATE',
+#                                 entity='Sheep',
+#                                 entity_id=sheep.ear_tag_number,
+#                                 new_values=cleaned_data,
+#                                 notes=f"Updated via CSV import"
+#                             )
+#                         else:
+#                             results['skipped'].append({'ear_tag_number': ear_tag, 'reason': 'Record already exists'})
+#                             continue
+#                     else:
+#                         # Create new record
+#                         sheep = create_sheep_record(cleaned_data)
+#                         results['created'].append(sheep)
+                        
+#                         # Log the creation
+#                         AuditLog.objects.create(
+#                             user=user,
+#                             action='CREATE',
+#                             entity='Sheep',
+#                             entity_id=sheep.ear_tag_number,
+#                             new_values=cleaned_data,
+#                             notes=f"Created via CSV import"
+#                         )
+                        
+#             except ValidationError as e:
+#                 results['errors'].append(f"Row {row_num} ({ear_tag}): {e}")
+#             except Exception as e:
+#                 results['errors'].append(f"Row {row_num} ({ear_tag}): Unexpected error - {str(e)}")
+                
+#     except Exception as e:
+#         results['errors'].append(f"File processing error: {str(e)}")
+    
+#     return results
+
+# def process_sheep_csv(csv_file, update_existing, request_user):
+#     """
+#     Process the uploaded CSV file and create/update sheep records
+#     """
+#     results = {
+#         'created': [],
+#         'updated': [],
+#         'skipped': [],
+#         'errors': []
+#     }
+    
+#     # Handle user lookup - multiple fallback approaches
+#     user = None
+    
+#     # Debug: print available attributes
+#     print(f"DEBUG: User object type: {type(request_user)}")
+#     print(f"DEBUG: User attributes: {dir(request_user)}")
+#     print(f"DEBUG: User username: {getattr(request_user, 'username', 'N/A')}")
+#     print(f"DEBUG: User pk: {getattr(request_user, 'pk', 'N/A')}")
+    
+#     try:
+#         # Try multiple approaches to get a valid user for audit logging
+        
+#         # Approach 1: Use the request user directly if it has the right attributes
+#         if hasattr(request_user, 'pk') and request_user.pk:
+#             user = request_user
+#         # Approach 2: Use first active user as fallback
+#         else:
+#             user = User.objects.filter(is_active=True).first()
+#             if not user:
+#                 # Last resort: create a system user for imports
+#                 user, created = User.objects.get_or_create(
+#                     username='system_import',
+#                     defaults={
+#                         'user_id': 'USER_SYSTEM_IMPORT',
+#                         'role': 'ADMIN',
+#                         'email': 'system@example.com',
+#                         'is_staff': False,
+#                         'is_superuser': False
+#                     }
+#                 )
+#                 if created:
+#                     user.set_unusable_password()
+#                     user.save()
+        
+#         print(f"DEBUG: Using user for audit: {user.username}")
+        
+#     except Exception as e:
+#         print(f"DEBUG: Error getting user: {e}")
+#         results['errors'].append("User configuration error")
+#         return results
+    
+#     # Read the CSV file
+#     try:
+#         # Handle both text and binary file uploads
+#         if hasattr(csv_file, 'read'):
+#             file_data = csv_file.read().decode('utf-8')
+#         else:
+#             file_data = csv_file
+            
+#         io_string = io.StringIO(file_data)
+#         reader = csv.DictReader(io_string)
+        
+#         # Validate required columns
+#         required_columns = ['ear_tag_number', 'breed', 'breed_level', 'sex', 'type']
+#         missing_columns = [col for col in required_columns if col not in reader.fieldnames]
+        
+#         if missing_columns:
+#             results['errors'].append(f"Missing required columns: {', '.join(missing_columns)}")
+#             return results
+        
+#         # Process each row
+#         for row_num, row in enumerate(reader, start=2):  # start=2 to account for header row
+#             # Initialize ear_tag here so it's available in exception blocks
+#             ear_tag = 'Unknown'
+#             try:
+#                 with transaction.atomic():
+#                     # Clean and validate row data
+#                     cleaned_data = clean_sheep_row_data(row)
+                    
+#                     # Get ear_tag from cleaned data
+#                     ear_tag = cleaned_data['ear_tag_number']
+                    
+#                     # Check if sheep already exists
+#                     existing_sheep = None
+#                     try:
+#                         existing_sheep = Sheep.objects.get(ear_tag_number=ear_tag)
+#                     except Sheep.DoesNotExist:
+#                         existing_sheep = None
+                    
+#                     # Handle existing records based on update_existing flag
+#                     if existing_sheep:
+#                         if update_existing:
+#                             # Update existing record
+#                             sheep = update_sheep_record(existing_sheep, cleaned_data)
+#                             results['updated'].append(sheep)
+                            
+#                             # Log the update
+#                             AuditLog.objects.create(
+#                                 user=user,
+#                                 action='UPDATE',
+#                                 entity='Sheep',
+#                                 entity_id=sheep.ear_tag_number,
+#                                 new_values=cleaned_data,
+#                                 notes=f"Updated via CSV import"
+#                             )
+#                         else:
+#                             results['skipped'].append({'ear_tag_number': ear_tag, 'reason': 'Record already exists'})
+#                             continue
+#                     else:
+#                         # Create new record
+#                         sheep = create_sheep_record(cleaned_data)
+#                         results['created'].append(sheep)
+                        
+#                         # Log the creation
+#                         AuditLog.objects.create(
+#                             user=user,
+#                             action='CREATE',
+#                             entity='Sheep',
+#                             entity_id=sheep.ear_tag_number,
+#                             new_values=cleaned_data,
+#                             notes=f"Created via CSV import"
+#                         )
+                        
+#             except ValidationError as e:
+#                 results['errors'].append(f"Row {row_num} ({ear_tag}): {e}")
+#             except Exception as e:
+#                 results['errors'].append(f"Row {row_num} ({ear_tag}): Unexpected error - {str(e)}")
+                
+#     except Exception as e:
+#         results['errors'].append(f"File processing error: {str(e)}")
+    
+#     return results
+
+# def process_sheep_csv(csv_file, update_existing, request_user):
+#     """
+#     Process the uploaded CSV file and create/update sheep records
+#     """
+#     results = {
+#         'created': [],
+#         'updated': [],
+#         'skipped': [],
+#         'errors': []
+#     }
+    
+#     # Handle user lookup - resolve the SimpleLazyObject to actual User instance
+#     user = None
+    
+#     try:
+#         # Force evaluation of the SimpleLazyObject to get the actual User instance
+#         if hasattr(request_user, '_wrapped'):
+#             # This is a SimpleLazyObject, get the wrapped user
+#             actual_user = request_user._wrapped
+#         else:
+#             # Already a User instance
+#             actual_user = request_user
+        
+#         # Approach 1: Use the actual user if it has a primary key
+#         if hasattr(actual_user, 'pk') and actual_user.pk:
+#             try:
+#                 user = User.objects.get(pk=actual_user.pk)
+#             except User.DoesNotExist:
+#                 user = None
+        
+#         # Approach 2: If we still don't have a user, use first active user as fallback
+#         if not user:
+#             user = User.objects.filter(is_active=True).first()
+#             if not user:
+#                 # Last resort: create a system user for imports
+#                 user, created = User.objects.get_or_create(
+#                     username='system_import',
+#                     defaults={
+#                         'user_id': 'USER_SYSTEM_IMPORT',
+#                         'role': 'ADMIN',
+#                         'email': 'system@example.com',
+#                         'is_staff': False,
+#                         'is_superuser': False
+#                     }
+#                 )
+#                 if created:
+#                     user.set_unusable_password()
+#                     user.save()
+        
+#     except Exception as e:
+#         print(f"DEBUG: Error getting user: {e}")
+#         results['errors'].append("User configuration error")
+#         return results
+    
+#     # Read the CSV file
+#     try:
+#         # Handle both text and binary file uploads
+#         if hasattr(csv_file, 'read'):
+#             file_data = csv_file.read().decode('utf-8')
+#         else:
+#             file_data = csv_file
+            
+#         io_string = io.StringIO(file_data)
+#         reader = csv.DictReader(io_string)
+        
+#         # Validate required columns
+#         required_columns = ['ear_tag_number', 'breed', 'breed_level', 'sex', 'type']
+#         missing_columns = [col for col in required_columns if col not in reader.fieldnames]
+        
+#         if missing_columns:
+#             results['errors'].append(f"Missing required columns: {', '.join(missing_columns)}")
+#             return results
+        
+#         # Process each row
+#         for row_num, row in enumerate(reader, start=2):  # start=2 to account for header row
+#             # Initialize ear_tag here so it's available in exception blocks
+#             ear_tag = 'Unknown'
+#             try:
+#                 with transaction.atomic():
+#                     # Clean and validate row data
+#                     cleaned_data = clean_sheep_row_data(row)
+                    
+#                     # Get ear_tag from cleaned data
+#                     ear_tag = cleaned_data['ear_tag_number']
+                    
+#                     # Check if sheep already exists
+#                     existing_sheep = None
+#                     try:
+#                         existing_sheep = Sheep.objects.get(ear_tag_number=ear_tag)
+#                     except Sheep.DoesNotExist:
+#                         existing_sheep = None
+                    
+#                     # Handle existing records based on update_existing flag
+#                     if existing_sheep:
+#                         if update_existing:
+#                             # Update existing record
+#                             sheep = update_sheep_record(existing_sheep, cleaned_data)
+#                             results['updated'].append(sheep)
+                            
+#                             # Prepare audit data with serializable values
+#                             audit_data = make_serializable_audit_data(cleaned_data)
+                            
+#                             # Log the update
+#                             AuditLog.objects.create(
+#                                 user=user,
+#                                 action='UPDATE',
+#                                 entity='Sheep',
+#                                 entity_id=sheep.ear_tag_number,
+#                                 new_values=audit_data,
+#                                 notes=f"Updated via CSV import"
+#                             )
+#                         else:
+#                             results['skipped'].append({'ear_tag_number': ear_tag, 'reason': 'Record already exists'})
+#                             continue
+#                     else:
+#                         # Create new record
+#                         sheep = create_sheep_record(cleaned_data)
+#                         results['created'].append(sheep)
+                        
+#                         # Prepare audit data with serializable values
+#                         audit_data = make_serializable_audit_data(cleaned_data)
+                        
+#                         # Log the creation
+#                         AuditLog.objects.create(
+#                             user=user,
+#                             action='CREATE',
+#                             entity='Sheep',
+#                             entity_id=sheep.ear_tag_number,
+#                             new_values=audit_data,
+#                             notes=f"Created via CSV import"
+#                         )
+                        
+#             except ValidationError as e:
+#                 results['errors'].append(f"Row {row_num} ({ear_tag}): {e}")
+#             except Exception as e:
+#                 results['errors'].append(f"Row {row_num} ({ear_tag}): Unexpected error - {str(e)}")
+                
+#     except Exception as e:
+#         results['errors'].append(f"File processing error: {str(e)}")
+    
+#     return results
+
+
+# def make_serializable_audit_data(cleaned_data):
+#     """
+#     Convert cleaned_data to JSON-serializable format for AuditLog
+#     """
+#     serializable_data = {}
+    
+#     for key, value in cleaned_data.items():
+#         if value is None:
+#             serializable_data[key] = None
+#         elif isinstance(value, (datetime.date, datetime.datetime)):
+#             # Convert date/datetime to ISO format string
+#             serializable_data[key] = value.isoformat()
+#         elif isinstance(value, Sheep):
+#             # Convert Sheep instance to ear tag number
+#             serializable_data[key] = value.ear_tag_number
+#         elif isinstance(value, (int, float, str, bool)):
+#             # These types are already JSON serializable
+#             serializable_data[key] = value
+#         else:
+#             # Convert any other type to string
+#             serializable_data[key] = str(value)
+    
+#     return serializable_data
+
+# def clean_sheep_row_data(row):
+#     """
+#     Clean and validate individual row data from CSV
+#     """
+#     cleaned_data = {}
+    
+#     # Required fields
+#     cleaned_data['ear_tag_number'] = row['ear_tag_number'].strip()
+#     if not cleaned_data['ear_tag_number']:
+#         raise ValidationError("Ear tag number is required")
+    
+#     # Breed validation
+#     breed = row['breed'].strip().upper()
+#     if breed not in dict(Sheep.BREED_CHOICES):
+#         raise ValidationError(f"Invalid breed: {breed}")
+#     cleaned_data['breed'] = breed
+    
+#     # Breed level validation
+#     try:
+#         breed_level = float(row['breed_level'])
+#         if not (0 <= breed_level <= 100):
+#             raise ValidationError("Breed level must be between 0 and 100")
+#         cleaned_data['breed_level'] = breed_level
+#     except (ValueError, TypeError):
+#         raise ValidationError("Breed level must be a number")
+    
+#     # Sex validation
+#     sex = row['sex'].strip().upper()
+#     if sex not in dict(Sheep.SEX_CHOICES):
+#         raise ValidationError(f"Invalid sex: {sex}")
+#     cleaned_data['sex'] = sex
+    
+#     # Type validation
+#     sheep_type = row['type'].strip().upper()
+#     if sheep_type not in dict(Sheep.TYPE_CHOICES):
+#         raise ValidationError(f"Invalid type: {sheep_type}")
+#     cleaned_data['type'] = sheep_type
+    
+#     # Optional date fields
+#     for date_field in ['date_of_birth', 'separation_date']:
+#         if row.get(date_field) and row[date_field].strip():
+#             try:
+#                 cleaned_data[date_field] = datetime.strptime(row[date_field].strip(), '%Y-%m-%d').date()
+#             except ValueError:
+#                 raise ValidationError(f"Invalid {date_field} format. Use YYYY-MM-DD")
+#         else:
+#             cleaned_data[date_field] = None
+    
+#     # Optional float fields
+#     for float_field in ['birth_weight', 'separation_weight']:
+#         if row.get(float_field) and row[float_field].strip():
+#             try:
+#                 cleaned_data[float_field] = float(row[float_field])
+#             except ValueError:
+#                 raise ValidationError(f"Invalid {float_field}: must be a number")
+#         else:
+#             cleaned_data[float_field] = None
+    
+#     # Parent relationships
+#     for parent_field in ['parent_ewe', 'parent_ram']:
+#         if row.get(parent_field) and row[parent_field].strip():
+#             parent_tag = row[parent_field].strip()
+#             try:
+#                 parent_sheep = Sheep.objects.get(ear_tag_number=parent_tag)
+                
+#                 # Validate parent type
+#                 if parent_field == 'parent_ewe' and parent_sheep.sex != 'FEMALE':
+#                     raise ValidationError(f"Parent ewe {parent_tag} is not female")
+#                 if parent_field == 'parent_ram' and parent_sheep.sex != 'MALE':
+#                     raise ValidationError(f"Parent ram {parent_tag} is not male")
+                    
+#                 cleaned_data[parent_field] = parent_sheep
+#             except Sheep.DoesNotExist:
+#                 raise ValidationError(f"{parent_field} {parent_tag} not found")
+#         else:
+#             cleaned_data[parent_field] = None
+    
+#     # Boolean fields
+#     for bool_field in ['is_healthy', 'flagged_for_culling']:
+#         if row.get(bool_field):
+#             value = row[bool_field].strip().upper()
+#             cleaned_data[bool_field] = value in ['TRUE', 'YES', '1', 'T']
+#         else:
+#             cleaned_data[bool_field] = False
+    
+#     # Text fields
+#     for text_field in ['health_notes', 'culling_reason']:
+#         cleaned_data[text_field] = row.get(text_field, '').strip()
+    
+#     # State validation
+#     if row.get('state'):
+#         state = row['state'].strip().upper()
+#         if state not in dict(Sheep.STATE_CHOICES):
+#             raise ValidationError(f"Invalid state: {state}")
+#         cleaned_data['state'] = state
+#     else:
+#         cleaned_data['state'] = 'SCILENT'
+    
+#     return cleaned_data
+# def clean_sheep_row_data(row):
+#     """
+#     Clean and validate individual row data from CSV
+#     """
+#     cleaned_data = {}
+    
+#     # Required fields
+#     cleaned_data['ear_tag_number'] = row['ear_tag_number'].strip()
+#     if not cleaned_data['ear_tag_number']:
+#         raise ValidationError("Ear tag number is required")
+    
+#     # Breed validation
+#     breed = row['breed'].strip().upper()
+#     if breed not in dict(Sheep.BREED_CHOICES):
+#         raise ValidationError(f"Invalid breed: {breed}")
+#     cleaned_data['breed'] = breed
+    
+#     # Breed level validation
+#     try:
+#         breed_level = float(row['breed_level'])
+#         if not (0 <= breed_level <= 100):
+#             raise ValidationError("Breed level must be between 0 and 100")
+#         cleaned_data['breed_level'] = breed_level
+#     except (ValueError, TypeError):
+#         raise ValidationError("Breed level must be a number")
+    
+#     # Sex validation
+#     sex = row['sex'].strip().upper()
+#     if sex not in dict(Sheep.SEX_CHOICES):
+#         raise ValidationError(f"Invalid sex: {sex}")
+#     cleaned_data['sex'] = sex
+    
+#     # Type validation
+#     sheep_type = row['type'].strip().upper()
+#     if sheep_type not in dict(Sheep.TYPE_CHOICES):
+#         raise ValidationError(f"Invalid type: {sheep_type}")
+#     cleaned_data['type'] = sheep_type
+    
+#     # Optional date fields - FIXED: Use datetime.datetime instead of just datetime
+#     for date_field in ['date_of_birth', 'separation_date']:
+#         if row.get(date_field) and row[date_field].strip():
+#             try:
+#                 # Use datetime.datetime.strptime instead of datetime.strptime
+#                 cleaned_data[date_field] = datetime.datetime.strptime(row[date_field].strip(), '%Y-%m-%d').date()
+#             except ValueError:
+#                 raise ValidationError(f"Invalid {date_field} format. Use YYYY-MM-DD")
+#         else:
+#             cleaned_data[date_field] = None
+    
+#     # Optional float fields
+#     for float_field in ['birth_weight', 'separation_weight']:
+#         if row.get(float_field) and row[float_field].strip():
+#             try:
+#                 cleaned_data[float_field] = float(row[float_field])
+#             except ValueError:
+#                 raise ValidationError(f"Invalid {float_field}: must be a number")
+#         else:
+#             cleaned_data[float_field] = None
+    
+#     # Parent relationships
+#     for parent_field in ['parent_ewe', 'parent_ram']:
+#         if row.get(parent_field) and row[parent_field].strip():
+#             parent_tag = row[parent_field].strip()
+#             try:
+#                 parent_sheep = Sheep.objects.get(ear_tag_number=parent_tag)
+                
+#                 # Validate parent type
+#                 if parent_field == 'parent_ewe' and parent_sheep.sex != 'FEMALE':
+#                     raise ValidationError(f"Parent ewe {parent_tag} is not female")
+#                 if parent_field == 'parent_ram' and parent_sheep.sex != 'MALE':
+#                     raise ValidationError(f"Parent ram {parent_tag} is not male")
+                    
+#                 cleaned_data[parent_field] = parent_sheep
+#             except Sheep.DoesNotExist:
+#                 raise ValidationError(f"{parent_field} {parent_tag} not found")
+#         else:
+#             cleaned_data[parent_field] = None
+    
+#     # Boolean fields
+#     for bool_field in ['is_healthy', 'flagged_for_culling']:
+#         if row.get(bool_field):
+#             value = row[bool_field].strip().upper()
+#             cleaned_data[bool_field] = value in ['TRUE', 'YES', '1', 'T']
+#         else:
+#             cleaned_data[bool_field] = False
+    
+#     # Text fields
+#     for text_field in ['health_notes', 'culling_reason']:
+#         cleaned_data[text_field] = row.get(text_field, '').strip()
+    
+#     # State validation
+#     if row.get('state'):
+#         state = row['state'].strip().upper()
+#         if state not in dict(Sheep.STATE_CHOICES):
+#             raise ValidationError(f"Invalid state: {state}")
+#         cleaned_data['state'] = state
+#     else:
+#         cleaned_data['state'] = 'SCILENT'
+    
+#     return cleaned_data
+
+# def create_sheep_record(cleaned_data):
+#     """
+#     Create a new Sheep record from cleaned data
+#     """
+#     sheep = Sheep.objects.create(
+#         ear_tag_number=cleaned_data['ear_tag_number'],
+#         breed=cleaned_data['breed'],
+#         breed_level=cleaned_data['breed_level'],
+#         sex=cleaned_data['sex'],
+#         type=cleaned_data['type'],
+#         date_of_birth=cleaned_data['date_of_birth'],
+#         birth_weight=cleaned_data['birth_weight'],
+#         separation_date=cleaned_data['separation_date'],
+#         separation_weight=cleaned_data['separation_weight'],
+#         parent_ewe=cleaned_data['parent_ewe'],
+#         parent_ram=cleaned_data['parent_ram'],
+#         is_healthy=cleaned_data['is_healthy'],
+#         health_notes=cleaned_data['health_notes'],
+#         state=cleaned_data['state'],
+#         flagged_for_culling=cleaned_data['flagged_for_culling'],
+#         culling_reason=cleaned_data['culling_reason']
+#     )
+    
+#     # Run validation and auto-culling logic
+#     sheep.full_clean()
+#     sheep.save()
+    
+#     return sheep
+
+# def update_sheep_record(existing_sheep, cleaned_data):
+#     """
+#     Update an existing Sheep record with cleaned data
+#     """
+#     # Update fields
+#     for field, value in cleaned_data.items():
+#         if hasattr(existing_sheep, field) and field != 'ear_tag_number':  # Don't update primary key
+#             setattr(existing_sheep, field, value)
+    
+#     # Run validation and auto-culling logic
+#     existing_sheep.full_clean()
+#     existing_sheep.save()
+    
+#     return existing_sheep
+
+# @login_required
+# def download_sample_csv(request):
+#     """
+#     View to serve a sample CSV template
+#     """
+#     from django.http import HttpResponse
+    
+#     # Create sample CSV content
+#     sample_content = """ear_tag_number,breed,breed_level,sex,type,date_of_birth,birth_weight,separation_date,separation_weight,parent_ewe,parent_ram,is_healthy,health_notes,state,flagged_for_culling,culling_reason
+# SH001,LOCAL,100.0,FEMALE,EWE,2022-03-15,4.2,2022-08-20,25.5,,,TRUE,,SCILENT,FALSE,
+# SH002,PA,75.0,MALE,RAM,2021-05-10,4.5,2021-10-15,28.0,,,TRUE,,SCILENT,FALSE,
+# SH003,PD,50.0,FEMALE,LAMB,2023-01-20,3.8,,,,SH001,SH002,TRUE,,SCILENT,FALSE,
+# SH004,AC,87.5,MALE,YOUNG_RAM,2022-07-05,4.1,2022-12-10,24.8,,,TRUE,,SCILENT,FALSE,
+# SH005,DC,62.5,FEMALE,GIMMER,2021-11-12,4.3,2022-04-18,26.2,,,FALSE,"Minor hoof issue",SCILENT,FALSE,
+# """
+    
+#     response = HttpResponse(sample_content, content_type='text/csv')
+#     response['Content-Disposition'] = 'attachment; filename="sample_sheep_import.csv"'
+    
+#     return response
+
+# @login_required
+# def download_csv_template(request):
+#     """Download a CSV template file"""
+#     response = HttpResponse(content_type='text/csv')
+#     response['Content-Disposition'] = 'attachment; filename="sheep_import_template.csv"'
+    
+#     writer = csv.writer(response)
+#     # Write header row
+#     writer.writerow([
+#         'ear_tag_number', 'breed', 'breed_level', 'sex', 'type', 
+#         'date_of_birth', 'is_healthy'
+#     ])
+    
+#     # Write example rows
+#     writer.writerow(['TAG001', 'PD', '90', 'MALE', 'RAM', '2022-03-15', 'true'])
+#     writer.writerow(['TAG002', 'LOCAL', '85', 'FEMALE', 'EWE', '2021-05-20', 'true'])
+#     writer.writerow(['TAG003', 'PA', '92', 'FEMALE', 'YOUNG_EWE', '2023-01-10', 'false'])
+    
+#     return response
+
+# @login_required
+# def export_sheep_csv(request):
+#     """Export all sheep data to CSV"""
+#     response = HttpResponse(content_type='text/csv')
+#     response['Content-Disposition'] = 'attachment; filename="sheep_export.csv"'
+    
+#     writer = csv.writer(response)
+#     # Write header
+#     writer.writerow([
+#         'Ear Tag Number', 'Breed', 'Breed Level', 'Sex', 'Type',
+#         'Date of Birth', 'Healthy', 'Age (days)'
+#     ])
+    
+#     # Write data rows
+#     sheep_list = Sheep.objects.all()
+#     for sheep in sheep_list:
+#         age_days = ''
+#         if sheep.date_of_birth:
+#             age_days = (timezone.now().date() - sheep.date_of_birth).days
+        
+#         writer.writerow([
+#             sheep.ear_tag_number,
+#             sheep.breed,
+#             sheep.breed_level,
+#             sheep.sex,
+#             sheep.type,
+#             sheep.date_of_birth.strftime('%Y-%m-%d') if sheep.date_of_birth else '',
+#             'Yes' if sheep.is_healthy else 'No',
+#             age_days
+#         ])
+    
+#     return response
 
 
 from django.views.generic import TemplateView, View
@@ -536,121 +1782,361 @@ class BreedingTaskView(View):
             messages.error(request, f"Error saving assignments: {e}")
             return redirect('breeding_task')
 
+# class BreedingInfoView(View):
+#     template_name = 'breeding_info.html'
+    
+#     def get(self, request):
+#         # Get final assignments from session (for confirmation after POST)
+#         breeding_assignments = request.session.get('breeding_assignments', {})
+        
+#         if not breeding_assignments:
+#             messages.warning(request, "No breeding assignments found")
+#             return redirect('breeding_task')
+        
+#         # Prepare breeding information for display
+#         breeding_info = self._prepare_breeding_info(breeding_assignments)
+        
+#         context = {
+#             'breeding_info': breeding_info
+#         }
+#         return render(request, self.template_name, context)
+    
+#     def post(self, request):
+#         """Handle final breeding plan creation"""
+#         try:
+#             # Get assignments from POST data, not session
+#             breeding_assignments_json = request.POST.get('breedingAssignments', '{}')
+#             breeding_assignments = json.loads(breeding_assignments_json)
+            
+#             logger.info(f"Received breeding assignments: {breeding_assignments}")
+            
+#             if not breeding_assignments:
+#                 messages.error(request, "No breeding assignments provided")
+#                 return redirect('breeding_task')
+            
+#             # Store in session for confirmation page
+#             request.session['breeding_assignments'] = breeding_assignments
+            
+#             # Create breeding cycles
+#             created_count = self._create_breeding_cycles(breeding_assignments)
+            
+#             if created_count > 0:
+#                 messages.success(request, f"Successfully created {created_count} breeding cycles")
+#             else:
+#                 messages.warning(request, "No breeding cycles were created")
+                
+#             return redirect('breeding_info')
+            
+#         except json.JSONDecodeError as e:
+#             messages.error(request, f"Invalid data format: {str(e)}")
+#             return redirect('breeding_task')
+#         except Exception as e:
+#             logger.error(f"Error creating breeding cycles: {str(e)}")
+#             messages.error(request, f"Error creating breeding cycles: {str(e)}")
+#             return redirect('breeding_task')
+    
+#     def _prepare_breeding_info(self, breeding_assignments):
+#         """Prepare breeding information for display"""
+#         breeding_info = []
+#         for ram_id, ewe_ids in breeding_assignments.items():
+#             try:
+#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
+#                 ewes = Sheep.objects.filter(ear_tag_number__in=ewe_ids)
+                
+#                 for ewe in ewes:
+#                     breeding_info.append({
+#                         'ram': ram,
+#                         'ewe': ewe,
+#                         'start_date': date.today(),
+#                         'expected_birth_date': date.today() + timedelta(days=155),
+#                         'capacity_info': get_ram_capacity_info(ram)
+#                     })
+#             except Sheep.DoesNotExist as e:
+#                 logger.warning(f"Sheep not found: {e}")
+#                 continue
+        
+#         return breeding_info
+    
+#     def _create_breeding_cycles(self, breeding_assignments):
+#         """Create breeding cycles in database"""
+#         created_count = 0
+#         for ram_id, ewe_ids in breeding_assignments.items():
+#             try:
+#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
+#                 for ewe_id in ewe_ids:
+#                     try:
+#                         ewe = Sheep.objects.get(ear_tag_number=ewe_id)
+                        
+#                         # Check if breeding cycle already exists to avoid duplicates
+#                         existing_cycle = BreedingCycle.objects.filter(
+#                             ewe=ewe, 
+#                             ram=ram, 
+#                             start_date=date.today()
+#                         ).first()
+                        
+#                         if existing_cycle:
+#                             logger.info(f"Breeding cycle already exists for {ewe_id} and {ram_id}")
+#                             continue
+                        
+#                         # Create breeding cycle
+#                         breeding_cycle = BreedingCycle.objects.create(
+#                             cycle_id=f"BC_{ram_id}_{ewe_id}_{date.today().strftime('%Y%m%d')}",
+#                             ewe=ewe,
+#                             ram=ram,
+#                             start_date=date.today(),
+#                             status='planned'
+#                         )
+#                         created_count += 1
+#                         logger.info(f"Created breeding cycle: {breeding_cycle.cycle_id}")
+                        
+#                     except Sheep.DoesNotExist:
+#                         logger.warning(f"Ewe not found: {ewe_id}")
+#                         continue
+#             except Sheep.DoesNotExist:
+#                 logger.warning(f"Ram not found: {ram_id}")
+#                 continue
+        
+#         return created_count
+
+
+# views.py
+
+# class BreedingInfoView(View):
+#     template_name = 'breeding_info.html'
+    
+#     def get(self, request):
+#         """
+#         Display the breeding plan stored in the session for review.
+#         """
+#         # 1. Retrieve draft assignments from session
+#         breeding_assignments = request.session.get('breeding_assignments', {})
+        
+#         # 2. Redirect if empty (e.g. direct access without selection)
+#         if not breeding_assignments:
+#             messages.warning(request, "No breeding plan found. Please select rams and assign ewes first.")
+#             return redirect('breeding_task')
+        
+#         # 3. Prepare display data (Ram objects, Ewe objects, Dates)
+#         breeding_info = []
+#         today = date.today()
+#         end_date = today + timedelta(days=51)  # Example breeding period
+#         expected_birth = today + timedelta(days=155) # Standard gestation
+#         expected_birth_end_date = end_date + timedelta(days=155) # Standard gestation
+
+#         for ram_tag, ewe_tags in breeding_assignments.items():
+#             try:
+#                 ram = Sheep.objects.get(ear_tag_number=ram_tag)
+#                 # Get all assigned ewes for this ram
+#                 ewes = Sheep.objects.filter(ear_tag_number__in=ewe_tags)
+                
+#                 # Get capacity for progress bars
+#                 capacity = get_ram_capacity_info(ram) 
+#                 # Note: This capacity calculation might need to account for 
+#                 # the *proposed* ewes if you want to show "Projected Capacity".
+#                 # For now, we show current DB capacity + session additions if needed, 
+#                 # or just current status.
+                
+#                 for ewe in ewes:
+#                     breeding_info.append({
+#                         'ram': ram,
+#                         'ewe': ewe,
+#                         'start_date': today,
+#                         'end_date': end_date,
+#                         'expected_birth_date': expected_birth,
+#                         'expected_birth_end_date': expected_birth_end_date,
+#                         'capacity_info': capacity
+#                     })
+#             except Sheep.DoesNotExist:
+#                 continue
+#             # --- NEW: Sort by Ram Breed to enable grouping in template ---
+#         breeding_info.sort(key=lambda x: x['ram'].breed)
+        
+#         context = {
+#             'breeding_info': breeding_info
+#         }
+#         return render(request, self.template_name, context)
+    
+#     def post(self, request):
+#         """
+#         Commit the breeding plan from session to the database.
+#         """
+#         breeding_assignments = request.session.get('breeding_assignments', {})
+        
+#         if not breeding_assignments:
+#             messages.error(request, "Session expired or empty. Please try again.")
+#             return redirect('breeding_task')
+        
+#         created_count = 0
+        
+#         try:
+#             with transaction.atomic(): # Ensure all or nothing
+#                 for ram_tag, ewe_tags in breeding_assignments.items():
+#                     ram = Sheep.objects.get(ear_tag_number=ram_tag)
+                    
+#                     for ewe_tag in ewe_tags:
+#                         ewe = Sheep.objects.get(ear_tag_number=ewe_tag)
+                        
+#                         # Generate ID
+#                         cycle_id = f"BC_{ram.ear_tag_number}_{ewe.ear_tag_number}_{date.today().strftime('%Y%m%d')}"
+                        
+#                         # Avoid duplicates
+#                         if BreedingCycle.objects.filter(cycle_id=cycle_id).exists():
+#                             continue
+
+#                         BreedingCycle.objects.create(
+#                             cycle_id=cycle_id,
+#                             ewe=ewe,
+#                             ram=ram,
+#                             start_date=date.today(),
+#                             status='PLANNED', # or 'IN_PROGRESS' depending on your workflow
+#                             created_by=request.user if request.user.is_authenticated else None
+#                         )
+#                         created_count += 1
+            
+#             # Success! Clear the session
+#             del request.session['breeding_assignments']
+#             # Optional: Clear selected rams too
+#             if 'selected_rams' in request.session:
+#                 del request.session['selected_rams']
+                
+#             messages.success(request, f"Successfully created {created_count} breeding cycles!")
+#             return redirect('home') # Redirect to Dashboard/Home
+            
+#         except Exception as e:
+#             logger.error(f"Error saving breeding plan: {e}")
+#             messages.error(request, f"An error occurred while saving: {e}")
+#             return redirect('breeding_info')
+
+# views.py
+
+from django.db import transaction # Ensure this is imported
+# ... other imports
+
 class BreedingInfoView(View):
     template_name = 'breeding_info.html'
-    
+    # ... GET method remains the same ...
     def get(self, request):
-        # Get final assignments from session (for confirmation after POST)
+        """
+        Display the breeding plan stored in the session for review.
+        """
+        # 1. Retrieve draft assignments from session
         breeding_assignments = request.session.get('breeding_assignments', {})
         
+        # 2. Redirect if empty (e.g. direct access without selection)
         if not breeding_assignments:
-            messages.warning(request, "No breeding assignments found")
+            messages.warning(request, "No breeding plan found. Please select rams and assign ewes first.")
             return redirect('breeding_task')
         
-        # Prepare breeding information for display
-        breeding_info = self._prepare_breeding_info(breeding_assignments)
-        
-        context = {
-            'breeding_info': breeding_info
-        }
-        return render(request, self.template_name, context)
-    
-    def post(self, request):
-        """Handle final breeding plan creation"""
-        try:
-            # Get assignments from POST data, not session
-            breeding_assignments_json = request.POST.get('breedingAssignments', '{}')
-            breeding_assignments = json.loads(breeding_assignments_json)
-            
-            logger.info(f"Received breeding assignments: {breeding_assignments}")
-            
-            if not breeding_assignments:
-                messages.error(request, "No breeding assignments provided")
-                return redirect('breeding_task')
-            
-            # Store in session for confirmation page
-            request.session['breeding_assignments'] = breeding_assignments
-            
-            # Create breeding cycles
-            created_count = self._create_breeding_cycles(breeding_assignments)
-            
-            if created_count > 0:
-                messages.success(request, f"Successfully created {created_count} breeding cycles")
-            else:
-                messages.warning(request, "No breeding cycles were created")
-                
-            return redirect('breeding_info')
-            
-        except json.JSONDecodeError as e:
-            messages.error(request, f"Invalid data format: {str(e)}")
-            return redirect('breeding_task')
-        except Exception as e:
-            logger.error(f"Error creating breeding cycles: {str(e)}")
-            messages.error(request, f"Error creating breeding cycles: {str(e)}")
-            return redirect('breeding_task')
-    
-    def _prepare_breeding_info(self, breeding_assignments):
-        """Prepare breeding information for display"""
+        # 3. Prepare display data (Ram objects, Ewe objects, Dates)
         breeding_info = []
-        for ram_id, ewe_ids in breeding_assignments.items():
+        today = date.today()
+        end_date = today + timedelta(days=51)  # Example breeding period
+        expected_birth = today + timedelta(days=155) # Standard gestation
+        expected_birth_end_date = end_date + timedelta(days=155) # Standard gestation
+
+        for ram_tag, ewe_tags in breeding_assignments.items():
             try:
-                ram = Sheep.objects.get(ear_tag_number=ram_id)
-                ewes = Sheep.objects.filter(ear_tag_number__in=ewe_ids)
+                ram = Sheep.objects.get(ear_tag_number=ram_tag)
+                # Get all assigned ewes for this ram
+                ewes = Sheep.objects.filter(ear_tag_number__in=ewe_tags)
+                
+                # Get capacity for progress bars
+                capacity = get_ram_capacity_info(ram) 
+                # Note: This capacity calculation might need to account for 
+                # the *proposed* ewes if you want to show "Projected Capacity".
+                # For now, we show current DB capacity + session additions if needed, 
+                # or just current status.
                 
                 for ewe in ewes:
                     breeding_info.append({
                         'ram': ram,
                         'ewe': ewe,
-                        'start_date': date.today(),
-                        'expected_birth_date': date.today() + timedelta(days=155),
-                        'capacity_info': get_ram_capacity_info(ram)
+                        'start_date': today,
+                        'end_date': end_date,
+                        'expected_birth_date': expected_birth,
+                        'expected_birth_end_date': expected_birth_end_date,
+                        'capacity_info': capacity
                     })
-            except Sheep.DoesNotExist as e:
-                logger.warning(f"Sheep not found: {e}")
+            except Sheep.DoesNotExist:
                 continue
+            # --- NEW: Sort by Ram Breed to enable grouping in template ---
+        breeding_info.sort(key=lambda x: x['ram'].breed)
         
-        return breeding_info
-    
-    def _create_breeding_cycles(self, breeding_assignments):
-        """Create breeding cycles in database"""
+        context = {
+            'breeding_info': breeding_info
+        }
+        return render(request, self.template_name, context)
+    def post(self, request):
+        """
+        Commit the breeding plan from session to the database and update Ewe states.
+        """
+        breeding_assignments = request.session.get('breeding_assignments', {})
+        
+        if not breeding_assignments:
+            messages.error(request, "Session expired or empty. Please try again.")
+            return redirect('breeding_task')
+        
         created_count = 0
-        for ram_id, ewe_ids in breeding_assignments.items():
-            try:
-                ram = Sheep.objects.get(ear_tag_number=ram_id)
-                for ewe_id in ewe_ids:
-                    try:
-                        ewe = Sheep.objects.get(ear_tag_number=ewe_id)
+        ewe_tags_to_update = set()
+        
+        try:
+            with transaction.atomic():
+                for ram_tag, ewe_tags in breeding_assignments.items():
+                    ram = Sheep.objects.get(ear_tag_number=ram_tag)
+                    
+                    for ewe_tag in ewe_tags:
+                        ewe = Sheep.objects.get(ear_tag_number=ewe_tag)
                         
-                        # Check if breeding cycle already exists to avoid duplicates
-                        existing_cycle = BreedingCycle.objects.filter(
-                            ewe=ewe, 
-                            ram=ram, 
-                            start_date=date.today()
-                        ).first()
+                        # Store the Ewe tag for state update later
+                        ewe_tags_to_update.add(ewe_tag)
+
+                        # Generate ID
+                        # Using the shorter ID format from previous step to avoid max_length error
+                        import uuid
+                        short_hash = str(uuid.uuid4())[:8]
+                        cycle_id = f"BC-{short_hash}"
                         
-                        if existing_cycle:
-                            logger.info(f"Breeding cycle already exists for {ewe_id} and {ram_id}")
+                        # Avoid duplicates
+                        if BreedingCycle.objects.filter(cycle_id=cycle_id).exists():
                             continue
-                        
-                        # Create breeding cycle
-                        breeding_cycle = BreedingCycle.objects.create(
-                            cycle_id=f"BC_{ram_id}_{ewe_id}_{date.today().strftime('%Y%m%d')}",
+
+                        # Create the cycle
+                        BreedingCycle.objects.create(
+                            cycle_id=cycle_id,
                             ewe=ewe,
                             ram=ram,
                             start_date=date.today(),
-                            status='planned'
+                            status='PLANNED', 
+                            created_by=request.user if request.user.is_authenticated else None
                         )
                         created_count += 1
-                        logger.info(f"Created breeding cycle: {breeding_cycle.cycle_id}")
-                        
-                    except Sheep.DoesNotExist:
-                        logger.warning(f"Ewe not found: {ewe_id}")
-                        continue
-            except Sheep.DoesNotExist:
-                logger.warning(f"Ram not found: {ram_id}")
-                continue
+
+                # --- FIX: Update all assigned Ewes' states outside the inner loop ---
+                # Retrieve all unique Ewe objects assigned
+                Ewes = Sheep.objects.filter(ear_tag_number__in=list(ewe_tags_to_update))
+                
+                # Bulk update the state to 'BREEDING'
+                Ewes.update(state='BREEDING') 
+                # ----------------------------------------------------------------------
+            
+            # Success! Clear the session
+            if 'breeding_assignments' in request.session:
+                del request.session['breeding_assignments']
+            if 'selected_rams' in request.session:
+                del request.session['selected_rams']
+                
+            messages.success(request, f"Successfully created {created_count} breeding cycles and updated {len(ewe_tags_to_update)} ewes to 'BREEDING' state!")
+            return redirect('home')
+            
+        except Sheep.DoesNotExist:
+            messages.error(request, "One or more sheep could not be found. Please retry selection.")
+            return redirect('breeding_info')
+            
+        except Exception as e:
+            logger.error(f"Error saving breeding plan: {e}")
+            messages.error(request, f"An error occurred while saving: {e}")
+            return redirect('breeding_info')
         
-        return created_count
 
 @login_required
 def debug_breeding_flow(request):

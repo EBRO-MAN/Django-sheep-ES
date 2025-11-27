@@ -132,7 +132,7 @@ class BreedingCycle(models.Model):
         ('CANCELLED', 'Cancelled'),
     ]
     
-    cycle_id = models.CharField(max_length=20, unique=True, primary_key=True)
+    cycle_id = models.CharField(max_length=100, unique=True, primary_key=True)
     ewe = models.ForeignKey(Sheep, on_delete=models.CASCADE, related_name='breeding_cycles_as_ewe')
     ram = models.ForeignKey(Sheep, on_delete=models.CASCADE, related_name='breeding_cycles_as_ram')
     start_date = models.DateField()

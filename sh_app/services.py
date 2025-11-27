@@ -23,7 +23,8 @@ def get_available_ewes():
     return Sheep.objects.filter(
         sex='FEMALE',
         is_healthy=True,
-        type__in=['EWE']
+        type__in=['EWE'],
+        # state='FLASHING'
     ).select_related('parent_ewe', 'parent_ram')
 
 # sh_app/services.py
@@ -79,7 +80,8 @@ def get_compatible_ewes(ram):
     ewes = Sheep.objects.filter(
         sex='female',
         type__in=['ewe'],
-        is_healthy=True
+        is_healthy=True,
+        state='FLASHING' # <-- Ewes must be in this state
     )
 
     compatible_ewes = []
@@ -190,9 +192,37 @@ def check_breed_compatibility(ram, ewe):
     Check if ram and ewe breeds are compatible based on registration rules
     Returns True if compatible, False if not
     """
-    ram_breed = ram.breed
-    ewe_breed = ewe.breed
+
+    # Define allowed pairings: (RAM_BREED, EWE_BREED)
+    ALLOWED_PAIRINGS = {
+        ('PD', 'PD'), ('PD', 'DC'), ('PD', 'LOCAL'), 
+        ('PA', 'PA'), ('PA', 'AC'),('PA', 'LOCAL'), 
+        ('LOCAL', 'LOCAL'), 
+        # --- NEW: Add AC Ram pairings to LOCAL, PA, and AC Ewes ---
+        ('AC', 'LOCAL'), 
+        ('AC', 'PA'),
+        ('AC', 'AC'),
+        # --- (Add other specific pairings you need here) ---
+        ('DC', 'LOCAL'), 
+        ('DC', 'PD'),
+        ('DC', 'DC'),
+        # Example for DC:
+        # ('DC', 'AC'), ('DC', 'PD'), ...
+    }
+
+    ram_breed = ram.breed.upper()
+    ewe_breed = ewe.breed.upper()
     
+    if (ram_breed, ewe_breed) in ALLOWED_PAIRINGS:
+        return True
+    
+    # logger.warning(f"Compatibility failed: Ram {ram.ear_tag_number} ({ram_breed}) x Ewe {ewe.ear_tag_number} ({ewe_breed}) is not in ALLOWED_PAIRINGS.")
+    # return False
+    
+    # Optionally, raise an error or return a message for incompatibility
+    # raise ValidationError(f"Incompatible breeds: {ram_breed} x {ewe_breed}")
+    # return False
+
     # Breed compatibility rules from SSD section 3.1
     # RAM restrictions (what ewes they can mate with)
     ram_restrictions = {
@@ -596,28 +626,63 @@ def get_family_relationship(ewe, ram):
 #     capacity = breed_capacity.get(ram.breed, 40)
 #     return current_cycles < capacity
 
-def check_ram_capacity(ram, breeding_season=None):
-    """Check if ram has reached breeding capacity for the season"""
-    from .models import BreedingCycle
+# def check_ram_capacity(ram, breeding_season=None):
+#     """Check if ram has reached breeding capacity for the season"""
+#     from .models import BreedingCycle
     
-    # Use current year if no breeding_season provided
-    if breeding_season is None:
-        breeding_season = date.today()
+#     # Use current year if no breeding_season provided
+#     if breeding_season is None:
+#         breeding_season = date.today()
     
-    CAPACITY_RULES = {
-        'PD': 55,
-        'PA': 40,
-        'LOCAL': 40,
-    }
+#     CAPACITY_RULES = {
+#         'PD': 55,
+#         'PA': 40,
+#         'LOCAL': 40,
+#     }
     
-    current_cycles = BreedingCycle.objects.filter(
+#     current_cycles = BreedingCycle.objects.filter(
+#         ram=ram,
+#         start_date__year=breeding_season.year,
+#         status__in=['planned', 'in_progress']
+#     ).count()
+    
+#     capacity = CAPACITY_RULES.get(ram.breed, 0)
+#     return current_cycles < capacity
+
+# services.py
+
+def check_ram_capacity(ram):
+    """
+    Checks if the ram has reached its maximum breeding capacity.
+    Capacity is based on breed (e.g., PD=55, others=40).
+    """
+    
+    # Define capacities based on breed (Add AC if it's special, otherwise use default)
+    if ram.breed.upper() == 'PD':
+        capacity = 55
+    # Assuming AC is treated like other standard breeds (not PD)
+    # If AC has a different capacity, you must define it here.
+    elif ram.breed.upper() in ['PA', 'LOCAL', 'AC', 'DC']: # Explicitly including AC
+        capacity = 40
+    else:
+        # Default for any other breed
+        capacity = 40 
+
+    # Count the number of active assignments for this ram
+    # Note: This counts assignments saved to the database (status='PLANNED' or 'IN_PROGRESS')
+    # If the assignment is only in the session, this count might be too low.
+    active_assignments_count = BreedingCycle.objects.filter(
         ram=ram,
-        start_date__year=breeding_season.year,
-        status__in=['planned', 'in_progress']
+        status__in=['PLANNED', 'IN_PROGRESS']
     ).count()
-    
-    capacity = CAPACITY_RULES.get(ram.breed, 0)
-    return current_cycles < capacity
+
+    # The ram is AVAILABLE if the current count is less than the capacity
+    if active_assignments_count < capacity:
+        return True
+    else:
+        # Optionally log that the ram is at capacity
+        logger.info(f"Ram {ram.ear_tag_number} ({ram.breed}) is at capacity ({active_assignments_count}/{capacity}).")
+        return False
 
 def get_ram_capacity_info(ram, breeding_season=None):
     """Get current capacity usage for a ram"""
@@ -631,6 +696,8 @@ def get_ram_capacity_info(ram, breeding_season=None):
         'PD': 55,
         'PA': 40,
         'LOCAL': 40,
+        'AC': 40,
+        'DC': 40,
     }
     
     current_cycles = BreedingCycle.objects.filter(
@@ -722,10 +789,12 @@ def get_upcoming_births(days=30):
     """
     today = date.today()
     end_date = today + timedelta(days=days)
+    end_date1 = today + timedelta(days=51)  # Example breeding period
     
     return BreedingCycle.objects.filter(
         status='IN_PROGRESS',
-        expected_birth_date__range=[today, end_date]
+        expected_birth_date__range=[today, end_date],
+        expected_birth_end__range=[end_date1, timedelta(days=155)]
     ).select_related('ewe', 'ram').order_by('expected_birth_date')
 
 def check_ram_utilization():
