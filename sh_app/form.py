@@ -6,7 +6,7 @@ class AddRecordForm(forms.ModelForm):
     ear_tag_number = forms.CharField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Ear tag", "class": "form-control"}), label="Ear Tag Number")
     # breed = forms.ChoiceField(required=True, widget=forms.widgets.Select(attrs={"placeholder": "Breed", "class": "form-control"}), label="")
     breed = forms.ChoiceField(choices=Sheep.BREED_CHOICES, widget=forms.Select(attrs={"class": "form-control"}), label="Breed")
-    breed_level =forms.FloatField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Breed level", "class": "form-control"}), label="Breed Level (%)")
+    blood_level =forms.FloatField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Blood level", "class": "form-control"}), label="Blood Level (%)")
     sex = forms.ChoiceField(choices=Sheep.SEX_CHOICES, widget=forms.Select(attrs={"class": "form-control"}), label="Sex")
     type = forms.ChoiceField(choices=Sheep.TYPE_CHOICES, widget=forms.Select(attrs={"class": "form-control"}), label="Sheep Type")
     # date_of_birth = forms.DateField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Date of birth", "class": "form-control"}), label="")
@@ -22,10 +22,9 @@ class AddRecordForm(forms.ModelForm):
 )
 
     birth_weight =forms.FloatField(required=True, widget=forms.widgets.TextInput(attrs={"placeholder": "Birth weight", "class": "form-control"}), label="Birth Weight (kg)")
-    # separation_date = forms.DateField( widget=forms.widgets.TextInput(attrs={"placeholder": "Separation date", "class": "form-control"}), label="")
-    # separation_date = forms.DateField(required=False, widget=forms.DateInput(attrs={"type": "date", "class": "form-control"}), label="Separation Date")
-    separation_date = forms.DateField(
-    label="Separation Date",
+        
+    weaning_date = forms.DateField(
+    label="Weaning Date",
     required=False,
     widget=forms.DateInput(attrs={
         "type": "date",
@@ -34,14 +33,14 @@ class AddRecordForm(forms.ModelForm):
     })
 )
 
-    # separation_weight = forms.FloatField( widget=forms.widgets.TextInput(attrs={"placeholder": "Separation weight", "class": "form-control"}), label="Separation Weight (kg)")
-    separation_weight = forms.FloatField(
-    label="Separation Weight (kg)",
+    
+    weaning_weight = forms.FloatField(
+    label="Weaning Weight (kg)",
     required=False,
-    widget=forms.NumberInput(attrs={"placeholder": "Separation weight", "class": "form-control"})
+    widget=forms.NumberInput(attrs={"placeholder": "Weaning weight", "class": "form-control"})
 )
 
-    # parent_ewe = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Parent ewe", "class": "form-control"}), label="")
+       
     parent_ewe = forms.ModelChoiceField(
     queryset=Sheep.objects.filter(type='EWE'),
     required=False,
@@ -49,7 +48,7 @@ class AddRecordForm(forms.ModelForm):
     label="Parent Ewe (Mother)"
 )
 
-    # parent_ram = forms.CharField(required=False, widget=forms.widgets.TextInput(attrs={"placeholder": "Parent ram", "class": "form-control"}), label="")
+       
     parent_ram = forms.ModelChoiceField(
     queryset=Sheep.objects.filter(type='RAM'),
     required=False,
@@ -57,7 +56,7 @@ class AddRecordForm(forms.ModelForm):
     label="Parent Ram (Father)"
 )
 
-    # is_healthy = forms.BooleanField(required=False, widget=forms.CheckboxInput(attrs={"class": "form-check-input"}), label="Is Healthy")
+    
     is_healthy = forms.BooleanField(
     label="Is the Sheep Healthy?",
     required=False,
@@ -82,7 +81,6 @@ class AddRecordForm(forms.ModelForm):
         exclude = ("user",)
 
 
-# breeding/forms.py
 
 from .models import BreedingCycle
 
@@ -95,7 +93,7 @@ class RamSelectionForm(forms.Form):
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        from .services import get_available_rams
+        from .services1 import get_available_rams
         self.fields['rams'].queryset = get_available_rams()
 
 class BreedingAssignmentForm(forms.Form):
@@ -114,7 +112,7 @@ class BreedingAssignmentForm(forms.Form):
                 )
 
 
-# form.py (Append this class)
+
 
 class CSVImportForm(forms.Form):
     csv_file = forms.FileField(
@@ -127,3 +125,56 @@ class CSVImportForm(forms.Form):
         label="Update Existing Records",
         help_text="If checked, records with matching Ear Tags will be updated. Otherwise, they will be skipped."
     )
+
+
+
+from django import forms
+from .models import Sheep, CullingRecord, MortalityRecord
+
+# Form for Adding a Single Sheep manually
+class SheepForm(forms.ModelForm):
+    class Meta:
+        model = Sheep
+        fields = '__all__'
+        exclude = ['state', 'parent_ram', 'parent_ewe'] # Exclude fields you don't want manual entry for
+        widgets = {
+            'date_of_birth': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'separation_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+        }
+
+class CullingForm(forms.Form):
+    ear_tag = forms.CharField(
+        label="Ear Tag Number",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter Ear Tag'})
+    )
+    reason = forms.CharField(
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        label="Reason for Culling"
+    )
+
+class MortalityForm(forms.Form):
+    ear_tag = forms.CharField(
+        label="Ear Tag Number",
+        widget=forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter Ear Tag'})
+    )
+    reason = forms.CharField(
+        widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        label="Cause of Death"
+    )
+
+class DistributionForm(forms.Form):
+    # This field will be populated with checkboxes of Young Rams
+    selected_rams = forms.ModelMultipleChoiceField(
+        queryset=Sheep.objects.none(), # Populated in __init__
+        widget=forms.CheckboxSelectMultiple,
+        label="Select Young Rams to Distribute"
+    )
+
+    def __init__(self, *args, **kwargs):
+        super(DistributionForm, self).__init__(*args, **kwargs)
+        # Filter for active YOUNG_RAMs
+        self.fields['selected_rams'].queryset = Sheep.objects.filter(
+            type='YOUNG_RAM'
+        ).exclude(state='IN_ACTIVE')
+
+        

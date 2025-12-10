@@ -1,33 +1,154 @@
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="{% url 'home'%}">Django SBES</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navbarSupportedContent">
-      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-      
+{% load static %}
 
-        {% if user.is_authenticated %}
-        <li class="nav-item">
-          <a class="nav-link" href="{% url 'add_record' %}">Add Record</a>
-        </li>
-        <li class="nav-item">
-           <a class="nav-link" href="{% url 'breeding_selection' %}">Breeding</a> 
-        </li>
-       <li class="nav-item">
-          <a class="nav-link" href="{% url 'logout' %}">Logout</a>
-        </li>
+<style>
+    /* Design System Variables (Should be in base.html) */
+    :root {
+        --primary-dark: #0f3d3e;
+        --primary-main: #2a9d8f;
+        --primary-light: #e9c46a;
+        --shadow-md: 0 4px 12px rgba(15, 61, 62, 0.1);
+        --radius-sm: 8px;
+    }
 
-        {% else %}
-          <li class="nav-item">
-          <a class="nav-link" href="{% url 'home' %}">Login</a>
-        </li>
-        {% endif %}
-      
-        
-      </ul>
-      
-    </div>
-  </div>
-</nav>
+    /* LOGGED IN NAVBAR (New Professional Look) */
+    .navbar-custom {
+        background: linear-gradient(135deg, var(--primary-dark) 0%, #1a5f60 100%);
+        box-shadow: var(--shadow-md);
+        padding: 12px 0;
+    }
+    
+    #nav-logo {
+        height: 45px;
+        width: auto;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.2);
+    }
+
+    .navbar-nav .nav-link {
+        color: rgba(255,255,255,0.9) !important;
+        font-weight: 500;
+        margin: 0 5px;
+        border-radius: var(--radius-sm);
+        transition: all 0.2s;
+        padding: 8px 16px;
+    }
+    
+    .navbar-nav .nav-link:hover {
+        background-color: rgba(255,255,255,0.1);
+        color: #fff !important;
+    }
+
+    /* GUEST / LANDING PAGE HEADER (Structural Logic Preserved) */
+    .main-header {
+        padding: 20px 0;
+        /* Using Blue/Green palette */
+        background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary-main) 100%);
+        width: 100%;
+        box-shadow: var(--shadow-md);
+        position: fixed; /* Keeping original fixed position */
+        top: 0;
+        z-index: 1000;
+    }
+    
+    .main-header .container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .main-header .logo {
+        display: flex;
+        align-items: center;
+        color: white;
+    }
+    
+    /* Ensure the original nested structure is kept for JS targeting */
+    .main-header .nav-menu {
+        display: none; /* Mobile menu initially hidden */
+        list-style: none;
+        margin: 0;
+        padding: 0;
+    }
+    
+    @media (min-width: 992px) { /* Adjust breakpoint as needed */
+        .main-header nav { display: block; }
+        .main-header .nav-menu { display: flex; }
+        .main-header .mobile-menu-btn { display: none; }
+    }
+    
+    .main-header .nav-menu a {
+        color: white;
+        text-decoration: none;
+        padding: 8px 15px;
+        display: block;
+        transition: color 0.2s;
+    }
+    .main-header .nav-menu a:hover {
+        color: var(--primary-light); /* Yellow accent for hover */
+    }
+
+</style>
+
+<div class="container-fluid p-0">
+  
+  {% if user.is_authenticated %}
+      <nav class="navbar navbar-expand-lg navbar-dark navbar-custom sticky-top">
+          <div class="container">   
+              <a class="navbar-brand d-flex align-items-center" href="{% url 'dashboard' %}">
+                  <img id="nav-logo" src="{% static 'images/AMHARA.jpg' %}" class="me-2" alt="Logo"/>
+                  <span>Sheep Expert System</span>
+              </a>
+              
+              <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                  <span class="navbar-toggler-icon"></span>
+              </button>
+              
+              <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                  <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+                      
+                      
+                    <!-- {% if request.user.groups.all.0.name == 'Breeder' %} -->
+                      {% if user.groups.filter(name='Breeder').exists() %}
+
+                          <li class="nav-item">
+                              <a class="nav-link" href="{% url 'breeding_selection' %}"><i class="bi bi-diagram-3 me-1"></i> Breeding</a>
+                          </li>
+                      {% endif %}
+
+                      <li class="nav-item">
+                          <a class="nav-link btn btn-outline-light border-0" href="{% url 'logout' %}">
+                              <i class="bi bi-box-arrow-right me-1"></i> Logout
+                          </a>
+                      </li>
+                  </ul>
+              </div>
+          </div>
+      </nav>
+
+  {% else %}
+      <header class="main-header">
+          <div class="container">
+              <div class="logo">
+                  <h1>
+                      <img id="nav-logo" src="{% static 'images/AMHARA.jpg' %}" class="me-2" alt="Logo" />
+                      Debre Berhan
+                      <span style="color: var(--primary-light); font-size: 0.8em;">sheep Multiplication & Breed Improvement Office</span>
+                  </h1>
+              </div>
+              <nav>
+                  <ul class="nav-menu">
+                      <li><a href="#home">Home</a></li>
+                      <li><a href="#about">About</a></li>
+                      <li><a href="#team">Team</a></li>
+                      <li><a href="#contact">Contact</a></li>
+                      <li><a href="{% url 'login' %}">login</a></li>
+                  </ul>
+                  <button class="mobile-menu-btn">
+                      <i class="fas fa-bars fa-lg text-white"></i>
+                  </button>
+              </nav>
+          </div>
+      </header>
+  {% endif %}
+
+</div>

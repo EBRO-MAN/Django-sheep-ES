@@ -361,6 +361,7 @@
                     <div class="stats-label">Available Ewes</div>
                 </div>
             </div>
+           
             <div class="col-md-3 col-sm-6">
                 <div class="stats-card text-center">
                     <div class="stats-value" id="lambs-count">{{ lambs.count }}</div>
@@ -414,7 +415,8 @@
                                 <div class="card-body">
                                     <div class="d-flex justify-content-between align-items-start mb-2">
                                         <div>
-                                            <h5 class="card-title fw-bold text-truncate me-2">{{ ram.ear_tag_number }}</h5>
+                                            <!-- <h5 class="card-title fw-bold text-truncate me-2">{{ ram.ear_tag_number }}</h5> -->
+                                             <h5 class="card-title fw-bold text-truncate me-2"><a href="{% url 'record' ram.ear_tag_number %}"> {{ram.ear_tag_number }}</a></h5>
                                             <span class="badge state-badge state-{{ ram.state|lower }}">{{ ram.state }}</span>
                                         </div>
                                         <span class="badge breed-badge breed-{{ ram.breed|lower }}">{{ ram.breed }}</span>
@@ -422,11 +424,11 @@
                                     
                                     <div class="mb-3">
                                         <div class="d-flex justify-content-between mb-1">
-                                            <small class="text-muted">Breed Level</small>
-                                            <small class="fw-bold">{{ ram.breed_level }}%</small>
+                                            <small class="text-muted">Blood Level</small>
+                                            <small class="fw-bold">{{ ram.blood_level }}%</small>
                                         </div>
                                         <div class="progress-modern">
-                                            <div class="progress-bar-modern" style="width: {{ ram.breed_level }}%"></div>
+                                            <div class="progress-bar-modern" style="width: {{ ram.blood_level }}%"></div>
                                         </div>
                                     </div>
                                     
@@ -495,7 +497,7 @@
                                 <div class="card-body py-3">
                                     <div class="d-flex justify-content-between align-items-start mb-2">
                                         <div>
-                                            <h6 class="card-title fw-bold mb-0">{{ ewe.ear_tag_number }}</h6>
+                                            <h6 class="card-title fw-bold mb-0"><a href="{% url 'record' ewe.ear_tag_number %}"> {{ewe.ear_tag_number }}</a></h6>
                                             <span class="badge state-badge state-{{ ewe.state|lower }}">{{ ewe.state }}</span>
                                         </div>
                                         <span class="badge breed-badge breed-{{ ewe.breed|lower }}">{{ ewe.breed }}</span>
@@ -503,10 +505,10 @@
                                     <div class="animal-details">
                                         <div class="d-flex justify-content-between mb-1">
                                             <small class="text-muted">Level</small>
-                                            <small class="fw-bold">{{ ewe.breed_level }}%</small>
+                                            <small class="fw-bold">{{ ewe.blood_level }}%</small>
                                         </div>
                                         <div class="progress-modern mb-2">
-                                            <div class="progress-bar-modern" style="width: {{ ewe.breed_level }}%"></div>
+                                            <div class="progress-bar-modern" style="width: {{ ewe.blood_level }}%"></div>
                                         </div>
                                         <div class="d-flex align-items-center">
                                             <i class="bi bi-tag text-primary me-1"></i>
@@ -539,6 +541,7 @@
                             <button class="btn btn-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 Filter
                             </button>
+                            
                             <ul class="dropdown-menu">
                                 <li><a class="dropdown-item active" href="#" data-section="lambs" data-breed="all">All Breeds</a></li>
                                 <li><hr class="dropdown-divider"></li>
@@ -557,7 +560,7 @@
                                 <div class="card-body py-3">
                                     <div class="d-flex justify-content-between align-items-start mb-2">
                                         <div>
-                                            <h6 class="card-title fw-bold mb-0">{{ lamb.ear_tag_number }}</h6>
+                                            <h6 class="card-title fw-bold mb-0"><a href="{% url 'record' lamb.ear_tag_number %}"> {{lamb.ear_tag_number }}</a></h6>
                                             <span class="badge state-badge state-{{ lamb.state|lower }}">{{ lamb.state }}</span>
                                         </div>
                                         <span class="badge breed-badge breed-{{ lamb.breed|lower }}">{{ lamb.breed }}</span>
@@ -565,10 +568,10 @@
                                     <div class="animal-details">
                                         <div class="d-flex justify-content-between mb-1">
                                             <small class="text-muted">Level</small>
-                                            <small class="fw-bold">{{ lamb.breed_level }}%</small>
+                                            <small class="fw-bold">{{ lamb.blood_level }}%</small>
                                         </div>
                                         <div class="progress-modern mb-2">
-                                            <div class="progress-bar-modern" style="width: {{ lamb.breed_level }}%"></div>
+                                            <div class="progress-bar-modern" style="width: {{ lamb.blood_level }}%"></div>
                                         </div>
                                         <div class="d-flex align-items-center">
                                             <i class="bi bi-tag text-primary me-1"></i>
@@ -619,7 +622,7 @@
                                 <div class="card-body py-3">
                                     <div class="d-flex justify-content-between align-items-start mb-2">
                                         <div>
-                                            <h6 class="card-title fw-bold mb-0">{{ gimmer.ear_tag_number }}</h6>
+                                            <h6 class="card-title fw-bold mb-0"><a href="{% url 'record' gimmer.ear_tag_number %}"> {{gimmer.ear_tag_number }}</a></h6>
                                             <span class="badge state-badge state-{{ gimmer.state|lower }}">{{ gimmer.state }}</span>
                                         </div>
                                         <span class="badge breed-badge breed-{{ gimmer.breed|lower }}">{{ gimmer.breed }}</span>
@@ -627,10 +630,10 @@
                                     <div class="animal-details">
                                         <div class="d-flex justify-content-between mb-1">
                                             <small class="text-muted">Level</small>
-                                            <small class="fw-bold">{{ gimmer.breed_level }}%</small>
+                                            <small class="fw-bold">{{ gimmer.blood_level }}%</small>
                                         </div>
                                         <div class="progress-modern mb-2">
-                                            <div class="progress-bar-modern" style="width: {{ gimmer.breed_level }}%"></div>
+                                            <div class="progress-bar-modern" style="width: {{ gimmer.blood_level }}%"></div>
                                         </div>
                                         <div class="d-flex align-items-center">
                                             <i class="bi bi-tag text-primary me-1"></i>
@@ -681,7 +684,7 @@
                                 <div class="card-body py-3">
                                     <div class="d-flex justify-content-between align-items-start mb-2">
                                         <div>
-                                            <h6 class="card-title fw-bold mb-0">{{ young_ram.ear_tag_number }}</h6>
+                                            <h6 class="card-title fw-bold mb-0"><a href="{% url 'record' young_ram.ear_tag_number %}"> {{young_ram.ear_tag_number }}</a></h6>
                                             <span class="badge state-badge state-{{ young_ram.state|lower }}">{{ young_ram.state }}</span>
                                         </div>
                                         <span class="badge breed-badge breed-{{ young_ram.breed|lower }}">{{ young_ram.breed }}</span>
@@ -689,10 +692,10 @@
                                     <div class="animal-details">
                                         <div class="d-flex justify-content-between mb-1">
                                             <small class="text-muted">Level</small>
-                                            <small class="fw-bold">{{ young_ram.breed_level }}%</small>
+                                            <small class="fw-bold">{{ young_ram.blood_level }}%</small>
                                         </div>
                                         <div class="progress-modern mb-2">
-                                            <div class="progress-bar-modern" style="width: {{ young_ram.breed_level }}%"></div>
+                                            <div class="progress-bar-modern" style="width: {{ young_ram.blood_level }}%"></div>
                                         </div>
                                         <div class="d-flex align-items-center">
                                             <i class="bi bi-tag text-primary me-1"></i>
@@ -792,6 +795,214 @@
 <div class="modal fade" id="ramSelectionModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-check2-square me-2"></i>Select Rams for Breeding</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <form method="post" action="{% url 'process_ram_selection' %}">
+                {% csrf_token %}
+
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Select rams that are ready for breeding (FLASHING state).
+                    </div>
+
+                    <div class="form-check mb-3 pb-2 border-bottom">
+                        <input class="form-check-input" type="checkbox" id="selectAllRams">
+                        <label class="form-check-label fw-bold text-primary" for="selectAllRams">
+                            Select All Available Rams
+                        </label>
+                    </div>
+
+                    <div class="row g-3">
+                        {% for ram in rams %}
+                            <!-- {% if ram.state == "FLASHING" %} -->
+                                <div class="col-md-6">
+                                    <div class="card h-100 border-start border-4 border-primary shadow-sm hover-shadow">
+                                        <div class="card-body py-2">
+                                            <div class="form-check d-flex align-items-center">
+                                                <input class="form-check-input me-3 fs-5 ram-checkbox" type="checkbox" 
+                                                    name="rams" value="{{ ram.ear_tag_number }}" 
+                                                    id="ram_{{ ram.ear_tag_number }}">
+
+                                                <label class="form-check-label w-100 cursor-pointer" for="ram_{{ ram.ear_tag_number }}">
+                                                    <div class="fw-bold text-dark">{{ ram.ear_tag_number }}</div>
+                                                    <div class="d-flex justify-content-between small">
+                                                        <span class="text-muted">{{ ram.breed }}</span>
+                                                        <span class="badge bg-light text-dark border">Level: {{ ram.blood_level }}</span>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <!-- {% endif %} -->
+                        {% empty %}
+                            <div class="col-12 text-center py-5 text-muted">
+                                <i class="bi bi-exclamation-circle fs-1 mb-2"></i>
+                                <h5>No Rams in FLASHING state available.</h5>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="modal-footer bg-light">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary px-4">
+                        Proceed to Task <i class="bi bi-arrow-right ms-2"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="ramFlashingModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form method="post" action="{% url 'bulk_flash_rams' %}"> {% csrf_token %}
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">Register Rams for Flashing</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                
+                <div class="modal-body">
+                    <div class="alert alert-info py-2">
+                        <small>Select Rams to update state to <strong>"FLASHING"</strong>.</small>
+                    </div>
+
+                    <div class="form-check mb-3 pb-2 border-bottom">
+                        <input class="form-check-input" type="checkbox" id="selectAllRamFlash">
+                        <label class="form-check-label fw-bold text-primary" for="selectAllRamFlash">
+                            Select All Available Rams
+                        </label>
+                    </div>
+
+                    <div class="row g-2" style="max-height: 400px; overflow-y: auto;">
+                        {% for ram in rams %} 
+                            {% if ram.state == "ACTIVE" and ram.type == "RAM" %}
+                            
+                                    <div class="col-md-6">
+                                        <div class="form-check p-2 border rounded hover-bg">
+                                            <input class="form-check-input ram-flash-item" type="checkbox" 
+                                                name="selected_rams" value="{{ ram.ear_tag_number }}" 
+                                                id="flash_ram_{{ ram.ear_tag_number }}">
+                                            
+                                            <label class="form-check-label w-100" for="flash_ram_{{ ram.ear_tag_number }}">
+                                                <strong>{{ ram.ear_tag_number }}</strong> 
+                                                <small class="text-muted">- {{ ram.breed }} ({{ ram.state }})</small>
+                                            </label>
+                                        </div>
+                                    </div>
+                            {% endif %}
+                            {% empty %}
+                                <p class="text-muted text-center">No eligible rams found.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Update State</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="eweFlashingModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form method="post" action="{% url 'bulk_flash_ewes' %}"> {% csrf_token %}
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white"> <h5 class="modal-title">Register Ewes for Flashing</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                
+                <div class="modal-body">
+                    <div class="alert alert-danger py-2 bg-danger text-white bg-opacity-10 border-danger">
+                        <small class="text-danger">Select Ewes to update state to <strong>"FLASHING"</strong>.</small>
+                    </div>
+
+                    <div class="form-check mb-3 pb-2 border-bottom">
+                        <input class="form-check-input" type="checkbox" id="selectAllEweFlash">
+                        <label class="form-check-label fw-bold text-danger" for="selectAllEweFlash">
+                            Select All Available Ewes
+                        </label>
+                    </div>
+
+                    <div class="row g-2" style="max-height: 400px; overflow-y: auto;">
+                        {% for ewe in ewes %}
+                            {% if ewe.state == "ACTIVE" and ewe.type == "EWE" %}
+                                <div class="col-md-6">
+                                    <div class="form-check p-2 border rounded hover-bg">
+                                        <input class="form-check-input ewe-flash-item" type="checkbox" 
+                                            name="selected_ewes" value="{{ ewe.ear_tag_number }}" 
+                                            id="flash_ewe_{{ ewe.ear_tag_number }}">
+                                        
+                                        <label class="form-check-label w-100" for="flash_ewe_{{ ewe.ear_tag_number }}">
+                                            <strong>{{ ewe.ear_tag_number }}</strong> 
+                                            <small class="text-muted">- {{ ewe.breed }} ({{ ewe.state }})</small>
+                                        </label>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% empty %}
+                        <p class="text-muted text-center">No eligible ewes found.</p>
+                        {% endfor %}
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Update State</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    .hover-bg:hover { background-color: #f8f9fa; cursor: pointer; }
+</style>
+<style>
+    .hover-scale:hover { transform: scale(1.05); transition: transform 0.2s; }
+    .cursor-pointer { cursor: pointer; }
+    .hover-shadow:hover { background-color: #f8f9fa; }
+</style>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const selectAllCheckbox = document.getElementById('selectAllRams');
+        const ramCheckboxes = document.querySelectorAll('.ram-checkbox');
+
+        if(selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                const isChecked = this.checked;
+                ramCheckboxes.forEach(checkbox => {
+                    checkbox.checked = isChecked;
+                });
+            });
+
+            // Optional: Uncheck "Select All" if user manually unchecks one item
+            ramCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    if (!this.checked) {
+                        selectAllCheckbox.checked = false;
+                    } else {
+                        // Check "Select All" if all individual boxes are checked
+                        const allChecked = Array.from(ramCheckboxes).every(cb => cb.checked);
+                        if(allChecked) selectAllCheckbox.checked = true;
+                    }
+                });
+            });
+        }
+    });
+</script>
+<!-- <div class="modal fade" id="ramSelectionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Select Rams for Breeding</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -805,7 +1016,7 @@
                         <i class="bi bi-info-circle me-2"></i>
                         Select rams that are ready for breeding (FLASHING state).
                     </div>
-
+                    
                     <div class="row">
                         {% for ram in rams %}
                             {% if ram.state == "FLASHING" %}
@@ -838,11 +1049,11 @@
             </form>
         </div>
     </div>
-</div>
+</div> -->
 
 
     <!-- RAM Flashing Modal -->
-<div class="modal fade" id="ramFlashingModal">
+<!-- <div class="modal fade" id="ramFlashingModal">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -856,17 +1067,17 @@
                     <div class="alert alert-warning">
                         This will change selected Rams to "FLASHING"
                     </div>
-
+                    
                     <div class="row">
                         {% for ram in rams %}
-                            {% if ram.state == "SCILENT" and ram.type == "RAM" %}
+                            {% if ram.state == "ACTIVE" and ram.type == "RAM" %}
                                 <div class="col-md-6 mb-3">
                                     <input type="checkbox" name="rams" value="{{ ram.ear_tag_number }}">
                                     <label><strong>{{ ram.ear_tag_number }}</strong> ({{ ram.breed }})</label>
                                 </div>
                             {% endif %}
                         {% empty %}
-                            <p>No Rams available in SCILENT state.</p>
+                            <p>No Rams available in ACTIVE state.</p>
                         {% endfor %}
                     </div>
                 </div>
@@ -880,8 +1091,8 @@
     </div>
 </div>
 
-<!-- EWE Flashing Modal -->
-<div class="modal fade" id="eweFlashingModal">
+<-- EWE Flashing Modal -->
+<!-- <-- <div class="modal fade" id="eweFlashingModal">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
@@ -898,14 +1109,14 @@
 
                     <div class="row">
                         {% for ewe in ewes %}
-                            {% if ewe.state == "SCILENT" and ewe.type == "EWE" %}
+                            {% if ewe.state == "ACTIVE" and ewe.type == "EWE" %}
                                 <div class="col-md-6 mb-3">
                                     <input type="checkbox" name="ewes" value="{{ ewe.ear_tag_number }}">
                                     <label><strong>{{ ewe.ear_tag_number }}</strong> ({{ ewe.breed }})</label>
                                 </div>
                             {% endif %}
                         {% empty %}
-                            <p>No Ewes available in SCILENT state.</p>
+                            <p>No Ewes available in ACTIVE state.</p>
                         {% endfor %}
                     </div>
                 </div>
@@ -917,7 +1128,7 @@
             </form>
         </div>
     </div>
-</div>
+</div> --> 
 
 
 
@@ -1999,6 +2210,61 @@
             calculateDates();
         });
     </script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        
+        /**
+         * Generic function to link a "Master" checkbox to "Slave" checkboxes
+         * @param {string} masterId - The ID of the 'Select All' checkbox
+         * @param {string} slaveClass - The class name of the item checkboxes
+         */
+        function setupSelectAll(masterId, slaveClass) {
+            const masterCheckbox = document.getElementById(masterId);
+            const slaveCheckboxes = document.querySelectorAll('.' + slaveClass);
+
+            // 1. Only proceed if the master checkbox exists on the page
+            if (masterCheckbox) {
+                
+                // 2. Master controls Slaves
+                masterCheckbox.addEventListener('change', function() {
+                    const isChecked = this.checked;
+                    slaveCheckboxes.forEach(cb => {
+                        cb.checked = isChecked;
+                    });
+                });
+
+                // 3. Slaves update Master (Optional but good UX)
+                // If user unchecks one item, 'Select All' should uncheck.
+                // If user checks all items manually, 'Select All' should check.
+                slaveCheckboxes.forEach(cb => {
+                    cb.addEventListener('change', function() {
+                        if (!this.checked) {
+                            masterCheckbox.checked = false;
+                        } else {
+                            const allChecked = Array.from(slaveCheckboxes).every(c => c.checked);
+                            if(allChecked) masterCheckbox.checked = true;
+                        }
+                    });
+                });
+            }
+        }
+
+        // --- INITIALIZE THE LOGIC FOR EACH MODAL ---
+
+        // 1. For Ram Selection (Breeding Page)
+        setupSelectAll('selectAllRams', 'ram-checkbox');
+
+        // 2. For RAM Flashing Modal (New)
+        setupSelectAll('selectAllRamFlash', 'ram-flash-item');
+
+        // 3. For EWE Flashing Modal (New)
+        setupSelectAll('selectAllEweFlash', 'ewe-flash-item');
+        
+        // 4. For Distribution Modal (From previous dashboard steps)
+        // Assuming master ID is 'selectAllDist' and items are 'dist-item'
+        // setupSelectAll('selectAllDist', 'dist-item'); 
+    });
+</script>
 </body>
 </html>
 

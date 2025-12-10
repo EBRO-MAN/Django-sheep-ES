@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Debre Berhan Sheep Multiplication & Breeding</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      body {
+        line-height: 1.6;
+        color: rgb(8, 1, 1);
+        background-color: white;
+      }
+      #logo {
+        display: block;
+        margin: 10px;
+        float: left;
+        height: 60px;
+        width: auto;
+        border-radius: 50%;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      .btn {
+        display: inline-block;
+        background-color: aqua;
+        color: white;
+        padding: 12px 30px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-decoration: none;
+      }
+
+      .btn:hover {
+        background-color: bisque;
+        transform: translateY(-3px);
+      }
+
+      .section {
+        padding: 80px 0;
+      }
+
+      .section-title {
+        text-align: center;
+        margin-bottom: 50px;
+      }
+
+      .section-title h2 {
+        font-size: 36px;
+        color: rgb(66, 60, 235);
+        margin-bottom: 15px;
+        position: relative;
+        display: inline-block;
+      }
+
+      .section-title h2::after {
+        content: "";
+        position: absolute;
+        width: 70px;
+        height: 3px;
+        background-color: aqua;
+        bottom: -10px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+
+      .section-title p {
+        color: rgb(10, 10, 10);
+        max-width: 700px;
+        margin: 0 auto;
+      }
+
+      /* Header Styles*/
+      .top-header {
+        background-color: rgb(45, 231, 45);
+        color: white;
+        padding: 10px 20px;
+        font-size: 14px;
+      }
+
+      .top-header .container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .contact-info span {
+        margin-right: 20px;
+      }
+
+      .contact-info i {
+        margin-right: 5px;
+        color: orange;
+      }
+
+      .social-links a {
+        color: white;
+        margin-left: 15px;
+        font-size: 16px;
+      }
+
+      .main-header {
+        padding: 20px 0;
+        background-color: rgb(19, 47, 52);
+        box-shadow: 0 2px 10px rgba(94, 127, 244, 0.1);
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+      }
+
+      .main-header .container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .logo h1 {
+        color: rgb(66, 79, 250);
+        font-size: 28px;
+      }
+
+      .logo span {
+        color: rgb(66, 79, 250);
+      }
+
+      .nav-menu {
+        display: flex;
+        list-style: none;
+      }
+
+      .nav-menu li {
+        margin-left: 25px;
+      }
+
+      .nav-menu a {
+        text-decoration: none;
+        color: rgb(66, 79, 250);
+        font-weight: 600;
+        transition: color 0.3s;
+      }
+
+      .nav-menu a:hover {
+        color: aqua;
+      }
+
+      .mobile-menu-btn {
+        display: none;
+        font-size: 24px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: rgb(232, 10, 10);
+      }
+
+      /* Hero Section*/
+      .hero {
+        background-image: url("images/photo_2025-11-23_14-19-01.jpg");
+        background-size: cover;
+        background-position: center;
+        padding: 150px 20px;
+        text-align: center;
+      }
+
+      .hero-content {
+        max-width: 900px;
+        margin: 10px auto;
+      }
+
+      .hero h2 {
+        font-size: 60px;
+        margin-bottom: 20px;
+        line-height: 1.2;
+      }
+
+      .hero p {
+        font-size: 18px;
+        margin-bottom: 30px;
+        max-width: 650px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+
+      /* Features Section*/
+      .features {
+        background-color: rgb(178, 172, 244);
+      }
+
+      .features-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 30px;
+      }
+
+      .feature-card {
+        background-color: rgb(134, 199, 236);
+        padding: 30px 20px;
+        border-radius: 5px;
+        text-align: center;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        transition: transform 0.3s;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-10px);
+      }
+
+      .feature-icon {
+        font-size: 40px;
+        color: rgb(89, 89, 161);
+        margin-bottom: 20px;
+      }
+
+      .feature-card h3 {
+        font-size: 20px;
+        margin-bottom: 15px;
+        color: rgb(108, 108, 238);
+      }
+
+      /* Services Section*/
+      .services-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+      }
+
+      .service-card {
+        background-color: rgb(109, 159, 238);
+        border-radius: 5px;
+        overflow: hidden;
+        transition: all 0.3s;
+      }
+
+      .service-card:hover {
+        transform: translateY(-10px);
+        box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+      }
+
+      .service-img {
+        height: 200px;
+        background-color: #ddd;
+        background-size: cover;
+        background-position: center;
+      }
+
+      .service-content {
+        padding: 25px;
+      }
+
+      .service-content h3 {
+        font-size: 22px;
+        margin-bottom: 15px;
+        color: var(--dark-color);
+      }
+
+      /* About Section*/
+      .about {
+        background-color: rgb(138, 209, 209);
+      }
+
+      .about-content {
+        display: flex;
+        align-items: center;
+        gap: 50px;
+      }
+
+      .about-text {
+        flex: 1;
+      }
+
+      .about-text h2 {
+        font-size: 36px;
+        margin-bottom: 20px;
+        color: grey;
+      }
+
+      .about-text p {
+        margin-bottom: 20px;
+        color: rgb(9, 10, 10);
+      }
+
+      .about-image {
+        flex: 1;
+        height: 400px;
+        background-color: #ddd;
+        border-radius: 5px;
+        background-image: url("images/photo_2025-11-22_15-26-00.jpg");
+        background-size: cover;
+        background-position: center;
+      }
+
+      /* Team Section*/
+      .team-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 30px;
+      }
+
+      .team-member {
+        text-align: center;
+      }
+
+      .member-img {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        background-color: #ddd;
+        margin: 0 auto 20px;
+        background-size: cover;
+        background-position: center;
+        border: 5px solid var(--secondary-color);
+      }
+
+      .team-member h3 {
+        font-size: 20px;
+        margin-bottom: 5px;
+      }
+
+      .team-member p {
+        color: black;
+      }
+
+      /* Contact Section*/
+      .contact {
+        background-color: rgb(168, 229, 246);
+        background-size: cover;
+        background-position: center;
+        color: #2e2e2d;
+        margin-bottom: 5px;
+      }
+
+      .contact-content {
+        display: flex;
+        gap: 50px;
+      }
+
+      .contact-info {
+        flex: 1;
+      }
+
+      .contact-info h3 {
+        font-size: 24px;
+        margin-bottom: 20px;
+        color: rgb(78, 65, 78);
+      }
+
+      .contact-details {
+        margin-bottom: 30px;
+      }
+
+      .contact-detail {
+        display: flex;
+        align-items: flex-start;
+        margin-bottom: 15px;
+      }
+
+      .contact-detail i {
+        color: var(--accent-color);
+        margin-right: 15px;
+        font-size: 20px;
+        margin-top: 5px;
+      }
+
+      .contact-form {
+        flex: 1;
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: 600;
+      }
+
+      .form-group input,
+      .form-group textarea {
+        width: 100%;
+        padding: 12px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 16px;
+      }
+
+      .form-group textarea {
+        height: 150px;
+        resize: vertical;
+      }
+
+      /* Footer*/
+      .footer {
+        background-color: rgb(40, 40, 40);
+        color: white;
+        padding: 40px 0 0;
+      }
+
+      .footer-content {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 40px;
+        margin-bottom: 50px;
+      }
+
+      .footer-column h3 {
+        font-size: 20px;
+        margin-bottom: 25px;
+        position: relative;
+        padding-bottom: 10px;
+      }
+
+      .footer-column h3::after {
+        content: "";
+        position: absolute;
+        width: 50px;
+        height: 2px;
+        background-color: var(--primary-color);
+        bottom: 0;
+        left: 0;
+      }
+
+      .footer-column p {
+        margin-bottom: 20px;
+        color: #ccc;
+      }
+
+      .footer-links {
+        list-style: none;
+      }
+
+      .footer-links li {
+        margin-bottom: 10px;
+      }
+
+      .footer-links a {
+        color: #ccc;
+        text-decoration: none;
+        transition: color 0.3s;
+      }
+
+      .footer-links a:hover {
+        color: var(--primary-color);
+      }
+
+      .footer-bottom {
+        background-color: #152218;
+        padding: 20px 0;
+        text-align: center;
+        color: #ccc;
+      }
+
+      /* Responsive Design */
+      @media (max-width: 992px) {
+        .features-grid,
+        .services-grid,
+        .projects-grid,
+        .team-grid,
+        .careers-grid,
+        .news-grid,
+        .footer-content {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .about-content {
+          flex-direction: column;
+        }
+
+        .contact-content {
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .top-header .container {
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .nav-menu {
+          display: none;
+          flex-direction: column;
+          position: absolute;
+          top: 100%;
+          left: 0;
+          width: 100%;
+          background-color: white;
+          box-shadow: 0 5px 10px rgba(0, 0, 0, 0.1);
+          padding: 20px;
+        }
+
+        .nav-menu.active {
+          display: flex;
+        }
+
+        .nav-menu li {
+          margin: 10px 0;
+        }
+
+        .mobile-menu-btn {
+          display: block;
+        }
+
+        .hero h2 {
+          font-size: 36px;
+        }
+
+        .section-title h2 {
+          font-size: 30px;
+        }
+      }
+
+      @media (max-width: 576px) {
+        .features-grid,
+        .services-grid,
+        .projects-grid,
+        .team-grid,
+        .careers-grid,
+        .news-grid,
+        .footer-content {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          padding: 100px 0;
+        }
+
+        .hero h2 {
+          font-size: 28px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Top Header -->
+    <!-- <div class="top-header">
+      <div class="container">
+        <div class="contact-info">
+          <span><i class="far fa-clock"></i> Mon - Fri 8:00AM - 5:00PM </span>
+          <span
+            ><i class="fas fa-phone"></i> +(251) 11681-xxxx<br />+(251)
+            11681-xxxx</span
+          >
+          <span><i class="far fa-envelope"></i> dbsheepsupport@mail.com</span>
+        </div>
+        <div class="social-links">
+          <a href="#"><i class="fab fa-facebook-f"></i></a>
+          <a href="#"><i class="fab fa-telegram"></i></a>
+        </div>
+      </div>
+    </div> -->
+
+    <!-- Main Header -->
+    <!-- <header class="main-header">
+      <div class="container">
+        <div class="logo">
+          <h1>
+            <img id="logo" src="images/AMHARA.jpg" />Debre Berhan
+            <span>sheep Multiplication & Breed Improvement Office</span>
+          </h1>
+        </div>
+        <nav>
+          <ul class="nav-menu">
+            <li><a href="#home">Home</a></li>
+            <li><a href="#about">About</a></li>
+            <li><a href="#team">Team</a></li>
+
+            <li><a href="#contact">Contact</a></li>
+            <li><a href="login.html">login</a></li>
+          </ul>
+          <button class="mobile-menu-btn">
+            <i class="fas fa-bars"></i>
+          </button>
+        </nav>
+      </div>
+    </header> -->
+
+    <!-- Hero Section -->
+    <section class="hero" id="home">
+      <div class="container">
+        <div class="hero-content">
+          <h2>The Best Company For Sheep Multiplication & Breeding</h2>
+          <p>
+            We specialize in sustainable sheep breeding practices that ensure
+            healthy livestock and maximum productivity for farmers across the
+            region.
+          </p>
+          <a href="#contact" class="btn">START WORK WITH US</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="section features">
+      <div class="container">
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-dna"></i>
+            </div>
+            <h3>Genetic Selection</h3>
+            <p>
+              We use advanced genetic selection techniques to breed superior
+              sheep with desirable traits.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-heartbeat"></i>
+            </div>
+            <h3>Health Management</h3>
+            <p>
+              Our comprehensive health management ensures all our sheep are in
+              optimal condition.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-leaf"></i>
+            </div>
+            <h3>Sustainable Practices</h3>
+            <p>
+              We implement eco-friendly and sustainable farming practices for a
+              better future.
+            </p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon">
+              <i class="fas fa-graduation-cap"></i>
+            </div>
+            <h3>Farmer Education</h3>
+            <p>
+              We provide training and resources to help farmers improve their
+              sheep breeding techniques.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Services Section -->
+    <section class="section" id="services">
+      <div class="container">
+        <div class="section-title">
+          <h2>Services We Provide</h2>
+          <p>
+            We offer comprehensive sheep breeding and multiplication services to
+            help farmers maximize their productivity and profitability.
+          </p>
+        </div>
+        <div class="services-grid">
+          <div class="service-card">
+            <div
+              class="service-img"
+              style="
+                background-image: url('images/photo_2025-11-22_15-26-00.jpg');
+              "
+            ></div>
+            <div class="service-content">
+              <h3>Sheep Multiplication</h3>
+              <p>
+                Our specialized multiplication programs help rapidly increase
+                your flock size with genetically superior animals.
+              </p>
+            </div>
+          </div>
+          <div class="service-card">
+            <div
+              class="service-img"
+              style="
+                background-image: url('images/photo_2025-11-22_15-26-00.jpg');
+              "
+            ></div>
+            <div class="service-content">
+              <h3>Breeding Programs</h3>
+              <p>
+                Customized breeding programs designed to meet specific
+                production goals and market demands.
+              </p>
+            </div>
+          </div>
+          <div class="service-card">
+            <div
+              class="service-img"
+              style="
+                background-image: url('images/photo_2025-11-22_15-26-00.jpg');
+              "
+            ></div>
+            <div class="service-content">
+              <h3>Genetic Selection</h3>
+              <p>
+                Utilizing cutting-edge genetic selection techniques to enhance
+                flock quality and performance.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- About Section -->
+    <section class="section about" id="about">
+      <div class="container">
+        <div class="about-content">
+          <div class="about-text">
+            <h2>About Us</h2>
+            <p>
+              With over 20 years of experience in sheep multiplication and
+              breeding, we have established ourselves as leaders in the
+              industry. Our commitment to quality, innovation, and sustainable
+              practices sets us apart.
+            </p>
+            <p>
+              We utilize state-of-the-art facilities and work with expert
+              geneticists to ensure our breeding programs produce superior
+              livestock that meet the highest standards of quality and
+              productivity.
+            </p>
+            <a href="#contact" class="btn">Learn More</a>
+          </div>
+          <div class="about-image"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Section -->
+    <section class="section" id="team">
+      <div class="container">
+        <div class="section-title">
+          <h2>Our Professional Team</h2>
+          <p>
+            Meet our team of experienced professionals dedicated to excellence
+            in sheep breeding and multiplication.
+          </p>
+        </div>
+        <div class="team-grid">
+          <div class="team-member">
+            <div
+              class="member-img"
+              img
+              src="images.png"
+              style="background-image: url('images/images.png')"
+            ></div>
+            <h3>Dr.</h3>
+            <p>Lead Geneticist</p>
+          </div>
+          <div class="team-member">
+            <div
+              class="member-img"
+              style="background-image: url('images/images.png')"
+            ></div>
+            <h3>Name</h3>
+            <p>Veterinary Specialist</p>
+          </div>
+          <div class="team-member">
+            <div
+              class="member-img"
+              style="background-image: url('images/images.png')"
+            ></div>
+            <h3>Name</h3>
+            <p>Breeding Program Manager</p>
+          </div>
+          <div class="team-member">
+            <div
+              class="member-img"
+              style="background-image: url('images/download.jpg')"
+            ></div>
+            <h3>Name</h3>
+            <p>Farm Operations Director</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Contact Section -->
+    <section class="section contact" id="contact">
+      <div class="container">
+        <div class="section-title">
+          <h2>Contact Us</h2>
+          <p>
+            Get in touch with us to learn more about our sheep multiplication
+            and breeding services.
+          </p>
+        </div>
+        <div class="contact-content">
+          <div class="contact-info">
+            <h3>Get In Touch</h3>
+            <div class="contact-details">
+              <div class="contact-detail">
+                <i class="fas fa-map-marker-alt"></i>
+                <div>
+                  <h4>Address</h4>
+                  <p>
+                    Debre Berhan, Ethiopia<br />
+                    near to ankober road
+                  </p>
+                </div>
+              </div>
+              <div class="contact-detail">
+                <i class="fas fa-phone"></i>
+                <div>
+                  <h4>Phone</h4>
+                  <p>+(251) 11681-xxxx<br />+(251) 11681-xxxx</p>
+                </div>
+              </div>
+              <div class="contact-detail">
+                <i class="far fa-envelope"></i>
+                <div>
+                  <h4>Email</h4>
+                  <p>dbsheepsupport@mail.com<br />dbinfo@sheepbreeding.com</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="contact-form">
+            <form>
+              <div class="form-group">
+                <label for="name">Your Name</label>
+                <input type="text" id="name" required />
+              </div>
+              <div class="form-group">
+                <label for="email">Your Email</label>
+                <input type="email" id="email" required />
+              </div>
+              <div class="form-group">
+                <label for="subject">Subject</label>
+                <input type="text" id="subject" required />
+              </div>
+              <div class="form-group">
+                <label for="message">Your Message</label>
+                <textarea id="message" required></textarea>
+              </div>
+              <button type="submit" class="btn">Send Message</button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-content">
+          <div class="footer-column">
+            <h3>About Us</h3>
+            <p>
+              We are a leading sheep multiplication and breeding company
+              dedicated to advancing sustainable farming practices and helping
+              farmers achieve maximum productivity.
+            </p>
+          </div>
+          <div class="footer-column">
+            <h3>Our Services</h3>
+            <ul class="footer-links">
+              <li><a href="#services">Sheep Multiplication</a></li>
+              <li><a href="#services">Breeding Programs</a></li>
+              <li><a href="#services">Genetic Selection</a></li>
+              <li><a href="#services">Health Management</a></li>
+            </ul>
+          </div>
+          <div class="footer-column">
+            <h3>Quick Links</h3>
+            <ul class="footer-links">
+              <li><a href="#home">Home</a></li>
+              <li><a href="#about">About Us</a></li>
+
+              <li><a href="#contact">Contact</a></li>
+            </ul>
+          </div>
+          <div class="footer-column">
+            <h3>Contact Info</h3>
+            <div class="contact-detail">
+              <i class="fas fa-map-marker-alt"></i>
+              <p>
+                Debre Berhan, Ethiopia<br />
+                near to ankober road
+              </p>
+            </div>
+            <div class="contact-detail">
+              <i class="fas fa-phone"></i>
+              <p>+(251) 11681-xxxx<br />+(251) 11681-xxxx</p>
+            </div>
+            <div class="contact-detail">
+              <i class="far fa-envelope"></i>
+              <p>sheepsupport@mail.com</p>
+            </div>
+            <div class="social-links">
+              <a href="#"><i class="fab fa-facebook-f"></i></a>
+              <a href="#"><i class="fab fa-telegram"></i></a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <div class="container">
+          <p>
+            &copy; 2025 Sheep Breeding Co. | Design & Developed by DBU Extension
+            Students
+          </p>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      // Mobile Menu Toggle
+      document
+        .querySelector(".mobile-menu-btn")
+        .addEventListener("click", function () {
+          document.querySelector(".nav-menu").classList.toggle("active");
+        });
+
+      // Smooth Scrolling for Anchor Links
+      document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
+        anchor.addEventListener("click", function (e) {
+          e.preventDefault();
+
+          const targetId = this.getAttribute("href");
+          if (targetId === "#") return;
+
+          const targetElement = document.querySelector(targetId);
+          if (targetElement) {
+            window.scrollTo({
+              top: targetElement.offsetTop - 100,
+              behavior: "smooth",
+            });
+
+            // Close mobile menu if open
+            document.querySelector(".nav-menu").classList.remove("active");
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

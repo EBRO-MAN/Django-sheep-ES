@@ -1,5 +1,5 @@
 # sh_app/context_processors.py
-from .services import get_ram_capacity_info
+from .services1 import get_ram_capacity_info
 
 def ram_capacity_info(request):
     def get_capacity_info(ram):

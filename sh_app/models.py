@@ -56,7 +56,8 @@ class Sheep(models.Model):
     ]
 
     STATE_CHOICES = [
-        ('SCILENT', 'Scilent'),
+        ('IN_ACTIVE', 'In_active'),
+        ('ACTIVE', 'Active'),
         ('FLASHING', 'Flashing'),
         ('BREEDING', 'Breeding'),
        ('PREGNANT', 'Pregnant'),
@@ -73,13 +74,13 @@ class Sheep(models.Model):
     
     ear_tag_number = models.CharField(max_length=50, unique=True, primary_key=True)
     breed = models.CharField(max_length=10, choices=BREED_CHOICES)
-    breed_level = models.FloatField()
+    blood_level = models.FloatField()
     sex = models.CharField(max_length=10, choices=SEX_CHOICES)
     type = models.CharField(max_length=10, choices=TYPE_CHOICES)
     date_of_birth = models.DateField(null=True, blank=True)
     birth_weight = models.FloatField(null=True, blank=True)
-    separation_date = models.DateField(null=True, blank=True)
-    separation_weight = models.FloatField(null=True, blank=True)
+    weaning_date = models.DateField(null=True, blank=True)
+    weaning_weight = models.FloatField(null=True, blank=True)
     parent_ewe = models.ForeignKey(
         'self', 
         on_delete=models.SET_NULL, 
@@ -98,7 +99,7 @@ class Sheep(models.Model):
     )
     is_healthy = models.BooleanField(default=True)
     health_notes = models.TextField(blank=True)
-    state = models.CharField(max_length=10, choices=STATE_CHOICES, default='SCILENT')
+    state = models.CharField(max_length=10, choices=STATE_CHOICES, default='ACTIVE')
     flagged_for_culling = models.BooleanField(default=False)
     culling_reason = models.TextField(blank=True)
     
@@ -113,10 +114,10 @@ class Sheep(models.Model):
             raise ValidationError("Parent ram must be male")
         
         # Auto-culling rule
-        if self.separation_weight and self.separation_weight < 11:
+        if self.weaning_weight and self.weaning_weight < 11:
             self.flagged_for_culling = True
             if not self.culling_reason:
-                self.culling_reason = "Low Separation Weight"
+                self.culling_reason = "Low Weaning Weight"
     
     def __str__(self):
         return f"{self.ear_tag_number} - {self.breed} - {self.type}"
@@ -191,7 +192,7 @@ class BreedingCycle(models.Model):
     
     def create_lambs_from_cycle(self):
         """Automatically create lamb records when birth date is recorded"""
-        from .services import predict_lamb_breed
+        from .services1 import predict_lamb_breed
         
         # This would typically be called with the number of lambs born
         # For now, we'll create one lamb as placeholder
@@ -200,7 +201,7 @@ class BreedingCycle(models.Model):
         lamb = Sheep.objects.create(
             ear_tag_number=f"LAMB_{self.cycle_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
             breed=lamb_breed,
-            breed_level=lamb_level,
+            blood_level=lamb_level,
             sex='UNKNOWN',  # Requires manual assignment
             type='LAMB',
             date_of_birth=self.actual_birth_date,
@@ -218,7 +219,7 @@ class BreedingCycle(models.Model):
             new_values={
                 'ear_tag_number': lamb.ear_tag_number,
                 'breed': lamb.breed,
-                'breed_level': lamb.breed_level,
+                'blood_level': lamb.blood_level,
                 'parent_ewe': self.ewe.ear_tag_number,
                 'parent_ram': self.ram.ear_tag_number
             },
@@ -229,7 +230,7 @@ class BreedingCycle(models.Model):
         return f"Cycle {self.cycle_id}: {self.ewe.ear_tag_number} × {self.ram.ear_tag_number}"
     
 def clean(self):
-    from .services import check_for_inbreeding, check_ram_capacity
+    from .services1 import check_for_inbreeding, check_ram_capacity
     
     # Ensure start_date is a date object for validation
     if not isinstance(self.start_date, date):
@@ -255,34 +256,37 @@ def save(self, *args, **kwargs):
     self.full_clean()
     super().save(*args, **kwargs)
 
+# class CullingRecord(models.Model):
+#     record_id = models.CharField(max_length=50, unique=True, primary_key=True)
+#     sheep = models.ForeignKey(Sheep, on_delete=models.CASCADE)
+#     date = models.DateField()
+#     reason = models.TextField(blank=True)
+#     created_at = models.DateTimeField(auto_now_add=True)
+
 class CullingRecord(models.Model):
-    record_id = models.CharField(max_length=50, unique=True, primary_key=True)
-    sheep = models.ForeignKey(Sheep, on_delete=models.CASCADE)
-    date = models.DateField()
-    reason = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-
-
+    sheep = models.ForeignKey(Sheep, on_delete=models.CASCADE, related_name='culling_records')
+    reason = models.TextField()
+    date_culled = models.DateField(auto_now_add=True)
+    
+    def __str__(self):
+        return f"{self.sheep.ear_tag_number} - {self.reason}"
 
 class MortalityRecord(models.Model):
-    record_id = models.CharField(max_length=50, unique=True, primary_key=True)
-    sheep = models.ForeignKey(Sheep, on_delete=models.CASCADE)
-    date_of_death = models.DateField()
-    cause_of_death = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    sheep = models.ForeignKey(Sheep, on_delete=models.CASCADE, related_name='mortality_records')
+    reason = models.TextField()
+    date_of_death = models.DateField(auto_now_add=True)
 
+    def __str__(self):
+        return f"{self.sheep.ear_tag_number} - {self.reason}"
 
 class DistributionRecord(models.Model):
-    record_id = models.CharField(max_length=50, unique=True, primary_key=True)
-    sheep = models.ForeignKey(
-        Sheep, 
-        on_delete=models.CASCADE,
-        limit_choices_to={'type': 'YOUNG_RAM'}
-    )
-    distribution_date = models.DateField()
-    farmer_id = models.CharField(max_length=100)
-    created_at = models.DateTimeField(auto_now_add=True)
+    sheep = models.ForeignKey(Sheep, on_delete=models.CASCADE, related_name='distribution_records')
+    distribution_date = models.DateField(auto_now_add=True)
+    # You can add 'destination' or 'price' fields here if needed later
+
+    def __str__(self):
+        return f"{self.sheep.ear_tag_number} - Distributed"
+
 
 
 class AuditLog(models.Model):

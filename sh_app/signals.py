@@ -11,7 +11,7 @@ def handle_breeding_cycle_completion(sender, instance, **kwargs):
     """
     if instance.status == 'COMPLETED' and instance.actual_birth_date:
         # Check if we need to create distribution alerts for young rams
-        from .services import check_young_ram_distribution
+        from .services1 import check_young_ram_distribution
         check_young_ram_distribution(instance.actual_birth_date.year)
 
 @receiver(post_save, sender=Sheep)

@@ -4,6 +4,44 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
+<script>
+// PDF Generation Function
+function generatePDF() {
+    const element = document.getElementById('printable-area');
+    const options = {
+        margin: 10,
+        filename: 'breeding_plan.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    
+    html2pdf().set(options).from(element).save();
+}
+
+// Excel Generation Function
+function generateExcel() {
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+    
+    // Get all breed groups
+    const breedCards = document.querySelectorAll('.card.shadow-sm.mb-4');
+    
+    breedCards.forEach((card, index) => {
+        const breedName = card.querySelector('.card-header h5').textContent.trim();
+        const table = card.querySelector('table');
+        
+        // Convert table to worksheet
+        const ws = XLSX.utils.table_to_sheet(table);
+        
+        // Add worksheet to workbook
+        XLSX.utils.book_append_sheet(wb, ws, breedName.substring(0, 31)); // Sheet names max 31 chars
+    });
+    
+    // Generate and download Excel file
+    XLSX.writeFile(wb, 'breeding_plan.xlsx');
+}
+</script>
 
 <div class="container mt-4">
     <div class="d-flex justify-content-between align-items-center mb-4">

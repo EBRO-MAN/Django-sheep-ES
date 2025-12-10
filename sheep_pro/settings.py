@@ -60,7 +60,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'sheep_pro.wsgi.application'
 
+# settings.py
 
+# Redirect to the 'dashboard' URL name after a successful login
+LOGIN_REDIRECT_URL = 'dashboard'
+
+# Optional: Redirect to the 'home' or 'login' page after logout
+LOGOUT_REDIRECT_URL = 'home'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 

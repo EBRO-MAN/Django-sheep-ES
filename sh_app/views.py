@@ -1,32 +1,100 @@
-# from django.shortcuts import render,redirect
 from urllib import request
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
-# from .models import Sheep
-from .form import AddRecordForm
-# from .services import get_available_rams, get_available_ewes, get_compatible_ewes
-# from django.contrib.auth.decorators import login_required
+
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-# from datetime import datetime
+
 import datetime
 from datetime import date, timedelta
 from django.http import JsonResponse
 from .models import Sheep, BreedingCycle, AuditLog
-from .services import (get_available_rams, get_available_lambs,get_available_ewes, get_available_gimmers,get_available_young_rams, get_compatible_ewes, get_ram_capacity_info, 
+from .services1 import (get_available_rams, get_available_lambs,get_available_ewes, get_available_gimmers,get_available_young_rams, get_compatible_ewes, get_ram_capacity_info, 
                       get_family_relationship, distribute_ewes_by_priority, check_breed_compatibility, check_for_inbreeding,
                       predict_lamb_breed, get_breed_compatibility_info, )
+
 import json
 from django.db import transaction
+from django.views.decorators.http import require_POST
 
+
+
+from .decorators import allowed_users
 import logging
-
 
 
 logger = logging.getLogger(__name__)
 
+# --- BREEDING FLOW VIEWS ---
 
+@login_required
+@allowed_users(allowed_roles=['Breeder',])
+def breeding_selection(request):
+    """
+    View to display eligible rams and ewes for manual selection.
+    This view is the one mapped to the '/selection/' URL.
+    """
+    # Filter for sheep that are ready for selection (ACTIVE or FLASHING)
+    eligible_rams = Sheep.objects.filter(
+        sex='MALE', 
+        type__in=['RAM', 'YOUNG_RAM'], 
+        state__in=['ACTIVE', 'FLASHING', 'IDLE'] # Allow IDLE for display/flashing prep
+    ).order_by('ear_tag_number')
+
+    eligible_ewes = Sheep.objects.filter(
+        sex='FEMALE', 
+        type__in=['EWE', 'GIMMER'], 
+        state__in=['ACTIVE', 'FLASHING', 'IDLE']
+    ).order_by('ear_tag_number')
+    
+    # Note: all_rams/all_ewes are used for the bulk action modals (FLASHING)
+    # They should include all relevant sheep regardless of current state
+    all_rams = Sheep.objects.filter(sex='MALE', type__in=['RAM', 'YOUNG_RAM']).order_by('ear_tag_number')
+    all_ewes = Sheep.objects.filter(sex='FEMALE', type__in=['EWE', 'GIMMER']).order_by('ear_tag_number')
+
+    context = {
+        'eligible_rams': eligible_rams,
+        'eligible_ewes': eligible_ewes,
+        'all_rams': all_rams,
+        'all_ewes': all_ewes,
+    }
+    return render(request, 'breeding.html', context)
+
+
+@login_required
+@allowed_users(allowed_roles=['Breeder',])
+@require_POST
+def process_assignment(request):
+    """
+    Handles the submission from the final 'Process Final Assignment' button 
+    on the breeding_selection page.
+
+    This function saves the user's manual card selections (ram_selection, ewe_selection) 
+    to the session and redirects to the detailed compatibility/assignment view.
+    """
+    # 1. Get selections from the POST data (from hidden checkboxes in breeding.html)
+    selected_ram_tags = request.POST.getlist('ram_selection')
+    selected_ewe_tags = request.POST.getlist('ewe_selection')
+
+    if not selected_ram_tags:
+        messages.error(request, "Please select at least one Ram to proceed.")
+        return redirect('breeding_selection')
+
+    if not selected_ewe_tags:
+        messages.error(request, "Please select at least one Ewe to proceed.")
+        return redirect('breeding_selection')
+
+    # 2. Store the selected Ear Tag Numbers in the session 
+    # This data will be used by the subsequent BreedingTaskView to run compatibility checks.
+    request.session['selected_rams'] = selected_ram_tags
+    request.session['selected_ewes'] = selected_ewe_tags 
+    request.session.modified = True
+
+    messages.info(request, f"Selection confirmed: {len(selected_ram_tags)} Rams and {len(selected_ewe_tags)} Ewes selected for assignment.")
+    
+    # 3. Redirect to the detailed assignment/task view
+    return redirect('breeding_task')
 
 # views.py (Add these imports and the function)
 
@@ -36,15 +104,218 @@ from datetime import datetime
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from .form import CSVImportForm
+# from .form import CSVImportForm
 from .models import Sheep
 
-# views.py
+
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
+from .models import Sheep, CullingRecord, MortalityRecord, DistributionRecord
+from .form import CullingForm, MortalityForm, DistributionForm, SheepForm
 
 
 # views.py
+
+from django.shortcuts import render
+# Ensure these models are imported
+from .models import CullingRecord, MortalityRecord, DistributionRecord
+
+
+# views.py
+
+from django.views.decorators.http import require_POST
+# ... existing imports ...
+
+@require_POST
+def bulk_flash_rams(request):
+    """
+    Updates the state of selected Rams to 'FLASHING'.
+    """
+    # 1. Get list of selected IDs from the form
+    selected_ids = request.POST.getlist('selected_rams')
+    
+    if not selected_ids:
+        messages.warning(request, "No rams selected for flashing.")
+        return redirect('breeding_selection') # Adjust redirect as needed
+
+    try:
+        # 2. Filter and Update
+        # We ensure we only update Rams to be safe
+        updated_count = Sheep.objects.filter(
+            ear_tag_number__in=selected_ids, 
+            sex='MALE'
+        ).update(state='FLASHING')
+        
+        messages.success(request, f"Successfully set {updated_count} Rams to FLASHING state.")
+        
+    except Exception as e:
+        messages.error(request, f"Error updating rams: {e}")
+
+    return redirect('breeding_selection')
+
+
+@require_POST
+def bulk_flash_ewes(request):
+    """
+    Updates the state of selected Ewes to 'FLASHING'.
+    """
+    # 1. Get list of selected IDs from the form
+    selected_ids = request.POST.getlist('selected_ewes')
+    
+    if not selected_ids:
+        messages.warning(request, "No ewes selected for flashing.")
+        return redirect('breeding_selection')
+
+    try:
+        # 2. Filter and Update
+        updated_count = Sheep.objects.filter(
+            ear_tag_number__in=selected_ids, 
+            sex='FEMALE'
+        ).update(state='FLASHING')
+        
+        messages.success(request, f"Successfully set {updated_count} Ewes to FLASHING state.")
+        
+    except Exception as e:
+        messages.error(request, f"Error updating ewes: {e}")
+
+    return redirect('breeding_selection')
+
+
+    
+def records_history(request):
+    """
+    Display historical records for Culling, Mortality, and Distribution.
+    """
+    # Fetch records ordered by newest first
+    # select_related is used to fetch the linked Sheep data efficiently
+    culling_records = CullingRecord.objects.select_related('sheep').order_by('-date_culled')
+    mortality_records = MortalityRecord.objects.select_related('sheep').order_by('-date_of_death')
+    distribution_records = DistributionRecord.objects.select_related('sheep').order_by('-distribution_date')
+
+    context = {
+        'culling_records': culling_records,
+        'mortality_records': mortality_records,
+        'distribution_records': distribution_records,
+    }
+    return render(request, 'records_history.html', context)
 
 @login_required
+@allowed_users(allowed_roles=['Admin', 'Breeder'])
+def dashboard(request):
+    """
+    The main landing page with the action buttons.
+    """
+    # Initialize forms
+    culling_form = CullingForm()
+    mortality_form = MortalityForm()
+    distribution_form = DistributionForm()
+
+    context = {
+        'culling_form': culling_form,
+        'mortality_form': mortality_form,
+        'distribution_form': distribution_form,
+    }
+    return render(request, 'dashboard.html', context)
+
+@login_required
+@allowed_users(allowed_roles=['Breeder',])
+def add_record(request):
+    """
+    Page to add a single sheep manually or upload CSV.
+    """
+    if request.method == 'POST':
+        form = SheepForm(request.POST)
+        if form.is_valid():
+            sheep = form.save(commit=False)
+            # Set default state if needed
+            if not sheep.state:
+                sheep.state = 'AVAILABLE' 
+            sheep.save()
+            messages.success(request, f"Sheep {sheep.ear_tag_number} added successfully.")
+            return redirect('add_record')
+    else:
+        form = SheepForm()
+
+    return render(request, 'add_record.html', {'form': form})
+
+# --- ACTION HANDLERS ---
+@login_required
+@allowed_users(allowed_roles=['Breeder',])
+def register_culling(request):
+    if request.method == 'POST':
+        form = CullingForm(request.POST)
+        if form.is_valid():
+            ear_tag = form.cleaned_data['ear_tag']
+            reason = form.cleaned_data['reason']
+            
+            try:
+                sheep = Sheep.objects.get(ear_tag_number=ear_tag)
+                
+                # Update State
+                sheep.state = 'In_Active'
+                sheep.save()
+                
+                # Create Record
+                CullingRecord.objects.create(sheep=sheep, reason=reason)
+                
+                messages.success(request, f"Culling registered for {ear_tag}.")
+            except Sheep.DoesNotExist:
+                messages.error(request, f"Sheep with tag {ear_tag} not found.")
+                
+    return redirect('dashboard')
+
+@login_required
+@allowed_users(allowed_roles=['Breeder',])
+def register_mortality(request):
+    if request.method == 'POST':
+        form = MortalityForm(request.POST)
+        if form.is_valid():
+            ear_tag = form.cleaned_data['ear_tag']
+            reason = form.cleaned_data['reason']
+            
+            try:
+                sheep = Sheep.objects.get(ear_tag_number=ear_tag)
+                
+                # Update State
+                sheep.state = 'In_Active'
+                sheep.save()
+                
+                # Create Record
+                MortalityRecord.objects.create(sheep=sheep, reason=reason)
+                
+                messages.warning(request, f"Mortality registered for {ear_tag}.")
+            except Sheep.DoesNotExist:
+                messages.error(request, f"Sheep with tag {ear_tag} not found.")
+                
+    return redirect('dashboard')
+
+@login_required
+@allowed_users(allowed_roles=['Breeder',])
+def register_distribution(request):
+    if request.method == 'POST':
+        form = DistributionForm(request.POST)
+        if form.is_valid():
+            selected_rams = form.cleaned_data['selected_rams']
+            count = 0
+            
+            for sheep in selected_rams:
+                # Update State
+                sheep.state = 'In_Active'
+                sheep.save()
+                
+                # Create Record
+                DistributionRecord.objects.create(sheep=sheep)
+                count += 1
+            
+            messages.success(request, f"Successfully distributed {count} Young Rams.")
+        else:
+            messages.error(request, "Invalid selection.")
+            
+    return redirect('dashboard')
+
+
+@login_required
+@allowed_users(allowed_roles=['Breeder',])
 def import_sheep_csv(request):
     """View for importing sheep data from CSV with robust handling"""
     if request.method == 'POST':
@@ -94,10 +365,10 @@ def import_sheep_csv(request):
                         
                         # Handle float parsing safely
                         try:
-                            breed_lvl_str = get_val('breed_level')
-                            breed_level = float(breed_lvl_str) if breed_lvl_str else 0.0
+                            blood_lvl_str = get_val('blood_level')
+                            blood_level = float(blood_lvl_str) if blood_lvl_str else 0.0
                         except ValueError:
-                            breed_level = 0.0
+                            blood_level = 0.0
 
                         sex = (get_val('sex') or '').upper()
                         sheep_type = (get_val('type') or '').upper()
@@ -121,10 +392,10 @@ def import_sheep_csv(request):
                             birth_weight = None
 
                         try:
-                            sw_str = get_val('separation_weight')
-                            sep_weight = float(sw_str) if sw_str else None
+                            ww_str = get_val('weaning_weight')
+                            weaning_weight = float(ww_str) if ww_str else None
                         except ValueError:
-                            sep_weight = None
+                            weaning_weight = None
 
                         # Handle Parents
                         parent_ram_tag = get_val('parent_ram')
@@ -140,12 +411,12 @@ def import_sheep_csv(request):
                         # 4. Save to Database
                         defaults = {
                             'breed': breed,
-                            'breed_level': breed_level,
+                            'blood_level': blood_level,
                             'sex': sex,
                             'type': sheep_type,
                             'date_of_birth': date_of_birth,
                             'birth_weight': birth_weight,
-                            'separation_weight': sep_weight,
+                            'weaning_weight': weaning_weight,
                             'parent_ram': parent_ram,
                             'parent_ewe': parent_ewe,
                             'is_healthy': is_healthy
@@ -179,145 +450,7 @@ def import_sheep_csv(request):
     
     return render(request, 'import_sheep_csv.html', {'form': form})
 
-# @login_required
-# def import_sheep_csv(request):
-#     """View for importing sheep data from CSV"""
-#     if request.method == 'POST':
-#         form = CSVImportForm(request.POST, request.FILES)
-#         if form.is_valid():
-#             csv_file = form.cleaned_data['csv_file']
-#             update_existing = form.cleaned_data['update_existing']
-            
-#             try:
-#                 # Read the CSV file
-#                 data_set = csv_file.read().decode('UTF-8')
-#                 io_string = io.StringIO(data_set)
-                
-#                 # Skip header row
-#                 next(io_string)
-                
-#                 success_count = 0
-#                 error_count = 0
-#                 errors = []
-                
-#                 for row_num, row in enumerate(csv.reader(io_string, delimiter=','), start=2):
-#                     try:
-#                         # 1. Basic Fields (Existing)
-#                         ear_tag_number = row[0].strip() if len(row) > 0 else ''
-#                         breed = row[1].strip().upper() if len(row) > 1 else ''
-#                         breed_level = float(row[2]) if len(row) > 2 and row[2] else 0.0 # Changed to float
-#                         sex = row[3].strip().upper() if len(row) > 3 else ''
-#                         sheep_type = row[4].strip().upper() if len(row) > 4 else ''
-                        
-#                         # 2. Date of Birth
-#                         date_of_birth = None
-#                         if len(row) > 5 and row[5]:
-#                             try:
-#                                 date_of_birth = datetime.strptime(row[5], '%Y-%m-%d').date()
-#                             except ValueError:
-#                                 try:
-#                                     date_of_birth = datetime.strptime(row[5], '%d/%m/%Y').date()
-#                                 except ValueError:
-#                                     date_of_birth = None
 
-#                         # /////////////////
-
-#                         is_healthy = row[11].strip().lower() in ['true', 'yes', '1', 'y'] if len(row) > 6 and row[6] else True
-
-#                         # --- NEW: Extended Fields (Missing parts) ---
-                        
-#                         # 3. Birth Weight (Column 8 / Index 7)
-#                         birth_weight = None
-#                         if len(row) > 6 and row[6]:
-#                             try:
-#                                 birth_weight = float(row[6])
-#                             except ValueError:
-#                                 birth_weight = None
-
-#                         # 4. Parent Ram (Father) - Look up the object
-#                         parent_ram = None
-#                         if len(row) > 10 and row[10]:
-#                             parent_ram_tag = row[10].strip()
-#                             parent_ram = Sheep.objects.filter(ear_tag_number=parent_ram_tag).first()
-#                             # Optional: You could log a warning if parent not found
-                        
-#                         # 5. Parent Ewe (Mother) - Look up the object
-#                         parent_ewe = None
-#                         if len(row) > 9 and row[9]:
-#                             parent_ewe_tag = row[9].strip()
-#                             parent_ewe = Sheep.objects.filter(ear_tag_number=parent_ewe_tag).first()
-
-#                         # 6. Separation Info (Optional columns if they exist)
-#                         separation_date = None
-#                         if len(row) > 7 and row[7]:
-#                              try:
-#                                 separation_date = datetime.strptime(row[7], '%Y-%m-%d').date()
-#                              except ValueError:
-#                                 pass
-                        
-#                         separation_weight = None
-#                         if len(row) > 8 and row[8]:
-#                              try:
-#                                 separation_weight = float(row[8])
-#                              except ValueError:
-#                                 pass
-
-#                         # --- End Extended Fields ---
-
-#                         # Validation
-#                         if not ear_tag_number or not breed:
-#                             errors.append(f"Row {row_num}: Missing Ear Tag or Breed")
-#                             error_count += 1
-#                             continue
-                        
-#                         # Prepare data dictionary
-#                         defaults = {
-#                             'breed': breed,
-#                             'breed_level': breed_level,
-#                             'sex': sex,
-#                             'type': sheep_type,
-#                             'date_of_birth': date_of_birth,
-#                             'is_healthy': is_healthy,
-#                             # Add the new fields here
-#                             'birth_weight': birth_weight,
-#                             'parent_ram': parent_ram,
-#                             'parent_ewe': parent_ewe,
-#                             'separation_date': separation_date,
-#                             'separation_weight': separation_weight,
-#                         }
-
-#                         # Save to Database
-#                         obj, created = Sheep.objects.update_or_create(
-#                             ear_tag_number=ear_tag_number,
-#                             defaults=defaults
-#                         )
-                        
-#                         if created or update_existing:
-#                             success_count += 1
-#                         else:
-#                             # If not created and not updating, we technically skipped it
-#                             pass 
-
-#                     except Exception as e:
-#                         errors.append(f"Row {row_num}: {str(e)}")
-#                         error_count += 1
-                
-#                 # Messages
-#                 if success_count > 0:
-#                     messages.success(request, f'Successfully processed {success_count} sheep records.')
-#                 if error_count > 0:
-#                     messages.warning(request, f'Encounters {error_count} errors.')
-#                     for error in errors[:5]:
-#                         messages.error(request, error)
-                
-#                 return redirect('home')
-                
-#             except Exception as e:
-#                 messages.error(request, f'Error reading CSV file: {str(e)}')
-#     else:
-#         form = CSVImportForm()
-    
-#     return render(request, 'import_sheep_csv.html', {'form': form})
 
 import csv
 import io
@@ -326,946 +459,19 @@ from django.contrib import messages
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
-# from .form import CSVImportForm, BreedingCSVImportForm, ExportSelectionForm
 
-# @login_required
-# def import_sheep_csv(request):
-#     """View for importing sheep data from CSV"""
-#     if request.method == 'POST':
-#         form = CSVImportForm(request.POST, request.FILES)
-#         if form.is_valid():
-#             csv_file = form.cleaned_data['csv_file']
-#             update_existing = form.cleaned_data['update_existing']
-            
-#             try:
-#                 # Read the CSV file
-#                 data_set = csv_file.read().decode('UTF-8')
-#                 io_string = io.StringIO(data_set)
-                
-#                 # Skip header row
-#                 next(io_string)
-                
-#                 # Process each row
-#                 success_count = 0
-#                 error_count = 0
-#                 errors = []
-                
-#                 for row_num, row in enumerate(csv.reader(io_string, delimiter=','), start=2):
-#                     try:
-#                         # Map CSV columns to model fields
-#                         ear_tag_number = row[0].strip() if len(row) > 0 else ''
-#                         breed = row[1].strip().upper() if len(row) > 1 else ''
-#                         breed_level = int(row[2]) if len(row) > 2 and row[2] else 0
-#                         sex = row[3].strip().upper() if len(row) > 3 else ''
-#                         sheep_type = row[4].strip().upper() if len(row) > 4 else ''
-                        
-#                         # Parse date (handle different formats)
-#                         date_of_birth = None
-#                         if len(row) > 5 and row[5]:
-#                             try:
-#                                 date_of_birth = datetime.strptime(row[5], '%Y-%m-%d').date()
-#                             except ValueError:
-#                                 try:
-#                                     date_of_birth = datetime.strptime(row[5], '%d/%m/%Y').date()
-#                                 except ValueError:
-#                                     date_of_birth = None
-                        
-#                         is_healthy = row[6].strip().lower() in ['true', 'yes', '1', 'y'] if len(row) > 6 and row[6] else True
-                        
-#                         # Validate required fields
-#                         if not ear_tag_number:
-#                             errors.append(f"Row {row_num}: Ear tag number is required")
-#                             error_count += 1
-#                             continue
-                        
-#                         if not breed:
-#                             errors.append(f"Row {row_num}: Breed is required")
-#                             error_count += 1
-#                             continue
-                        
-#                         # Check if sheep already exists
-#                         if update_existing and Sheep.objects.filter(ear_tag_number=ear_tag_number).exists():
-#                             # Update existing record
-#                             sheep = Sheep.objects.get(ear_tag_number=ear_tag_number)
-#                             sheep.breed = breed
-#                             sheep.breed_level = breed_level
-#                             sheep.sex = sex
-#                             sheep.type = sheep_type
-#                             if date_of_birth:
-#                                 sheep.date_of_birth = date_of_birth
-#                             sheep.is_healthy = is_healthy
-#                             sheep.save()
-#                             success_count += 1
-#                         else:
-#                             # Create new record (don't duplicate)
-#                             if not Sheep.objects.filter(ear_tag_number=ear_tag_number).exists():
-#                                 sheep = Sheep(
-#                                     ear_tag_number=ear_tag_number,
-#                                     breed=breed,
-#                                     breed_level=breed_level,
-#                                     sex=sex,
-#                                     type=sheep_type,
-#                                     date_of_birth=date_of_birth,
-#                                     is_healthy=is_healthy
-#                                 )
-#                                 sheep.save()
-#                                 success_count += 1
-#                             else:
-#                                 errors.append(f"Row {row_num}: Sheep with ear tag {ear_tag_number} already exists")
-#                                 error_count += 1
-                                
-#                     except IndexError:
-#                         errors.append(f"Row {row_num}: Insufficient columns")
-#                         error_count += 1
-#                     except ValueError as e:
-#                         errors.append(f"Row {row_num}: Invalid data - {str(e)}")
-#                         error_count += 1
-#                     except Exception as e:
-#                         errors.append(f"Row {row_num}: Error - {str(e)}")
-#                         error_count += 1
-                
-#                 # Show results
-#                 if success_count > 0:
-#                     messages.success(request, f'Successfully imported/updated {success_count} sheep records')
-#                 if error_count > 0:
-#                     messages.warning(request, f'Failed to import {error_count} records. Check errors below.')
-#                     for error in errors[:10]:  # Show first 10 errors
-#                         messages.error(request, error)
-#                     if len(errors) > 10:
-#                         messages.info(request, f'... and {len(errors) - 10} more errors')
-                
-#                 return redirect('home')
-                
-#             except Exception as e:
-#                 messages.error(request, f'Error reading CSV file: {str(e)}')
-#     else:
-#         form = CSVImportForm()
-    
-#     return render(request, 'import_sheep_csv.html', {'form': form})
 
-# views.py
-import csv
-import io
-from datetime import datetime
+
+
 from django.shortcuts import render, redirect
-from django.contrib import messages
+
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from .models import Sheep, AuditLog, User
 from .form import CSVImportForm, AddRecordForm
 
-# @login_required
-# def sheep_list(request):
-#     """View for listing all sheep"""
-#     sheeps = Sheep.objects.all()
-#     return render(request, 'sheep_list.html', {'sheeps': sheeps})
 
-# @login_required
-# def import_sheep_csv(request):
-#     """
-#     View for importing sheep records from CSV file
-#     """
-#     context = {}
-    
-#     if request.method == 'POST':
-#         form = CSVImportForm(request.POST, request.FILES)
-        
-#         if form.is_valid():
-#             csv_file = request.FILES['csv_file']
-#             update_existing = form.cleaned_data['update_existing']
-            
-#             # Pass the entire user object instead of just ID
-#             import_results = process_sheep_csv(csv_file, update_existing, request.user)
-#             context['import_results'] = import_results
-            
-#             # Show appropriate messages
-#             if import_results['errors']:
-#                 messages.error(request, f"Import completed with {len(import_results['errors'])} error(s)")
-#             else:
-#                 messages.success(request, f"Successfully imported {len(import_results['created'])} new records and updated {len(import_results['updated'])} records")
-                
-#             # Re-initialize form for new import
-#             context['form'] = CSVImportForm()
-#         else:
-#             context['form'] = form
-#             messages.error(request, "Please correct the errors below")
-#     else:
-#         context['form'] = CSVImportForm()
-    
-#     return render(request, 'import_sheep_csv.html', context)
-# @login_required
-# def import_sheep_csv(request):
-#     """
-#     View for importing sheep records from CSV file
-#     """
-#     context = {}
-    
-#     if request.method == 'POST':
-#         form = CSVImportForm(request.POST, request.FILES)
-        
-#         if form.is_valid():
-#             csv_file = request.FILES['csv_file']
-#             update_existing = form.cleaned_data['update_existing']
-            
-#             # Process the CSV file
-#             import_results = process_sheep_csv(csv_file, update_existing, request.user.user_id)
-#             context['import_results'] = import_results
-            
-#             # Show appropriate messages
-#             if import_results['errors']:
-#                 messages.error(request, f"Import completed with {len(import_results['errors'])} error(s)")
-#             else:
-#                 messages.success(request, f"Successfully imported {len(import_results['created'])} new records and updated {len(import_results['updated'])} records")
-                
-#             # Re-initialize form for new import
-#             context['form'] = CSVImportForm()
-#         else:
-#             context['form'] = form
-#             messages.error(request, "Please correct the errors below")
-#     else:
-#         context['form'] = CSVImportForm()
-    
-#     return render(request, 'import_sheep_csv.html', context)
-
-# def process_sheep_csv(csv_file, update_existing, user_id):
-#     """
-#     Process the uploaded CSV file and create/update sheep records
-#     """
-#     print(f"DEBUG: Received user_id: {user_id}, type: {type(user_id)}")
-
-#     results = {
-#         'created': [],
-#         'updated': [],
-#         'skipped': [],
-#         'errors': []
-#     }
-#     try:
-#         user = User.objects.get(user_id=user_id)
-#         print(f"DEBUG: Found user: {user}, user_id: {user.user_id}")
-#     except User.DoesNotExist:
-        
-#         print(f"DEBUG: User with user_id '{user_id}' not found")
-#         users = User.objects.all()
-#         if users.exists():
-#             user = users.first()
-#             print(f"DEBUG: Using fallback user: {user}")
-#         else:
-#             results['errors'].append("No users found in system")
-#             return results
-        
-#     except Exception as e:
-#         print(f"DEBUG: Error finding user: {e}")
-#         results['errors'].append(f"Error finding user: {e}")
-#         return results
-
-#     # Get the user instance from the ID
-#     try:
-#         user = User.objects.get(user_id=user_id)
-#     except User.DoesNotExist:
-#         results['errors'].append("User not found")
-#         return results
-    
-#     # Read the CSV file
-#     try:
-#         # Handle both text and binary file uploads
-#         if hasattr(csv_file, 'read'):
-#             file_data = csv_file.read().decode('utf-8')
-#         else:
-#             file_data = csv_file
-            
-#         io_string = io.StringIO(file_data)
-#         reader = csv.DictReader(io_string)
-        
-#         # Validate required columns
-#         required_columns = ['ear_tag_number', 'breed', 'breed_level', 'sex', 'type']
-#         missing_columns = [col for col in required_columns if col not in reader.fieldnames]
-        
-#         if missing_columns:
-#             results['errors'].append(f"Missing required columns: {', '.join(missing_columns)}")
-#             return results
-        
-#         # Process each row
-#         for row_num, row in enumerate(reader, start=2):  # start=2 to account for header row
-#             # Initialize ear_tag here so it's available in exception blocks
-#             ear_tag = 'Unknown'
-#             try:
-#                 with transaction.atomic():
-#                     # Clean and validate row data
-#                     cleaned_data = clean_sheep_row_data(row)
-                    
-#                     # Get ear_tag from cleaned data
-#                     ear_tag = cleaned_data['ear_tag_number']
-                    
-#                     # Check if sheep already exists
-#                     existing_sheep = None
-#                     try:
-#                         existing_sheep = Sheep.objects.get(ear_tag_number=ear_tag)
-#                     except Sheep.DoesNotExist:
-#                         existing_sheep = None
-                    
-#                     # Handle existing records based on update_existing flag
-#                     if existing_sheep:
-#                         if update_existing:
-#                             # Update existing record
-#                             sheep = update_sheep_record(existing_sheep, cleaned_data)
-#                             results['updated'].append(sheep)
-                            
-#                             # Log the update
-#                             AuditLog.objects.create(
-#                                 user=user,
-#                                 action='UPDATE',
-#                                 entity='Sheep',
-#                                 entity_id=sheep.ear_tag_number,
-#                                 new_values=cleaned_data,
-#                                 notes=f"Updated via CSV import"
-#                             )
-#                         else:
-#                             results['skipped'].append({'ear_tag_number': ear_tag, 'reason': 'Record already exists'})
-#                             continue
-#                     else:
-#                         # Create new record
-#                         sheep = create_sheep_record(cleaned_data)
-#                         results['created'].append(sheep)
-                        
-#                         # Log the creation
-#                         AuditLog.objects.create(
-#                             user=user,
-#                             action='CREATE',
-#                             entity='Sheep',
-#                             entity_id=sheep.ear_tag_number,
-#                             new_values=cleaned_data,
-#                             notes=f"Created via CSV import"
-#                         )
-                        
-#             except ValidationError as e:
-#                 results['errors'].append(f"Row {row_num} ({ear_tag}): {e}")
-#             except Exception as e:
-#                 results['errors'].append(f"Row {row_num} ({ear_tag}): Unexpected error - {str(e)}")
-                
-#     except Exception as e:
-#         results['errors'].append(f"File processing error: {str(e)}")
-    
-#     return results
-
-# def process_sheep_csv(csv_file, update_existing, request_user):
-#     """
-#     Process the uploaded CSV file and create/update sheep records
-#     """
-#     results = {
-#         'created': [],
-#         'updated': [],
-#         'skipped': [],
-#         'errors': []
-#     }
-    
-#     # Handle user lookup - multiple fallback approaches
-#     user = None
-    
-#     # Debug: print available attributes
-#     print(f"DEBUG: User object type: {type(request_user)}")
-#     print(f"DEBUG: User attributes: {dir(request_user)}")
-#     print(f"DEBUG: User username: {getattr(request_user, 'username', 'N/A')}")
-#     print(f"DEBUG: User pk: {getattr(request_user, 'pk', 'N/A')}")
-    
-#     try:
-#         # Try multiple approaches to get a valid user for audit logging
-        
-#         # Approach 1: Use the request user directly if it has the right attributes
-#         if hasattr(request_user, 'pk') and request_user.pk:
-#             user = request_user
-#         # Approach 2: Use first active user as fallback
-#         else:
-#             user = User.objects.filter(is_active=True).first()
-#             if not user:
-#                 # Last resort: create a system user for imports
-#                 user, created = User.objects.get_or_create(
-#                     username='system_import',
-#                     defaults={
-#                         'user_id': 'USER_SYSTEM_IMPORT',
-#                         'role': 'ADMIN',
-#                         'email': 'system@example.com',
-#                         'is_staff': False,
-#                         'is_superuser': False
-#                     }
-#                 )
-#                 if created:
-#                     user.set_unusable_password()
-#                     user.save()
-        
-#         print(f"DEBUG: Using user for audit: {user.username}")
-        
-#     except Exception as e:
-#         print(f"DEBUG: Error getting user: {e}")
-#         results['errors'].append("User configuration error")
-#         return results
-    
-#     # Read the CSV file
-#     try:
-#         # Handle both text and binary file uploads
-#         if hasattr(csv_file, 'read'):
-#             file_data = csv_file.read().decode('utf-8')
-#         else:
-#             file_data = csv_file
-            
-#         io_string = io.StringIO(file_data)
-#         reader = csv.DictReader(io_string)
-        
-#         # Validate required columns
-#         required_columns = ['ear_tag_number', 'breed', 'breed_level', 'sex', 'type']
-#         missing_columns = [col for col in required_columns if col not in reader.fieldnames]
-        
-#         if missing_columns:
-#             results['errors'].append(f"Missing required columns: {', '.join(missing_columns)}")
-#             return results
-        
-#         # Process each row
-#         for row_num, row in enumerate(reader, start=2):  # start=2 to account for header row
-#             # Initialize ear_tag here so it's available in exception blocks
-#             ear_tag = 'Unknown'
-#             try:
-#                 with transaction.atomic():
-#                     # Clean and validate row data
-#                     cleaned_data = clean_sheep_row_data(row)
-                    
-#                     # Get ear_tag from cleaned data
-#                     ear_tag = cleaned_data['ear_tag_number']
-                    
-#                     # Check if sheep already exists
-#                     existing_sheep = None
-#                     try:
-#                         existing_sheep = Sheep.objects.get(ear_tag_number=ear_tag)
-#                     except Sheep.DoesNotExist:
-#                         existing_sheep = None
-                    
-#                     # Handle existing records based on update_existing flag
-#                     if existing_sheep:
-#                         if update_existing:
-#                             # Update existing record
-#                             sheep = update_sheep_record(existing_sheep, cleaned_data)
-#                             results['updated'].append(sheep)
-                            
-#                             # Log the update
-#                             AuditLog.objects.create(
-#                                 user=user,
-#                                 action='UPDATE',
-#                                 entity='Sheep',
-#                                 entity_id=sheep.ear_tag_number,
-#                                 new_values=cleaned_data,
-#                                 notes=f"Updated via CSV import"
-#                             )
-#                         else:
-#                             results['skipped'].append({'ear_tag_number': ear_tag, 'reason': 'Record already exists'})
-#                             continue
-#                     else:
-#                         # Create new record
-#                         sheep = create_sheep_record(cleaned_data)
-#                         results['created'].append(sheep)
-                        
-#                         # Log the creation
-#                         AuditLog.objects.create(
-#                             user=user,
-#                             action='CREATE',
-#                             entity='Sheep',
-#                             entity_id=sheep.ear_tag_number,
-#                             new_values=cleaned_data,
-#                             notes=f"Created via CSV import"
-#                         )
-                        
-#             except ValidationError as e:
-#                 results['errors'].append(f"Row {row_num} ({ear_tag}): {e}")
-#             except Exception as e:
-#                 results['errors'].append(f"Row {row_num} ({ear_tag}): Unexpected error - {str(e)}")
-                
-#     except Exception as e:
-#         results['errors'].append(f"File processing error: {str(e)}")
-    
-#     return results
-
-# def process_sheep_csv(csv_file, update_existing, request_user):
-#     """
-#     Process the uploaded CSV file and create/update sheep records
-#     """
-#     results = {
-#         'created': [],
-#         'updated': [],
-#         'skipped': [],
-#         'errors': []
-#     }
-    
-#     # Handle user lookup - resolve the SimpleLazyObject to actual User instance
-#     user = None
-    
-#     try:
-#         # Force evaluation of the SimpleLazyObject to get the actual User instance
-#         if hasattr(request_user, '_wrapped'):
-#             # This is a SimpleLazyObject, get the wrapped user
-#             actual_user = request_user._wrapped
-#         else:
-#             # Already a User instance
-#             actual_user = request_user
-        
-#         # Approach 1: Use the actual user if it has a primary key
-#         if hasattr(actual_user, 'pk') and actual_user.pk:
-#             try:
-#                 user = User.objects.get(pk=actual_user.pk)
-#             except User.DoesNotExist:
-#                 user = None
-        
-#         # Approach 2: If we still don't have a user, use first active user as fallback
-#         if not user:
-#             user = User.objects.filter(is_active=True).first()
-#             if not user:
-#                 # Last resort: create a system user for imports
-#                 user, created = User.objects.get_or_create(
-#                     username='system_import',
-#                     defaults={
-#                         'user_id': 'USER_SYSTEM_IMPORT',
-#                         'role': 'ADMIN',
-#                         'email': 'system@example.com',
-#                         'is_staff': False,
-#                         'is_superuser': False
-#                     }
-#                 )
-#                 if created:
-#                     user.set_unusable_password()
-#                     user.save()
-        
-#     except Exception as e:
-#         print(f"DEBUG: Error getting user: {e}")
-#         results['errors'].append("User configuration error")
-#         return results
-    
-#     # Read the CSV file
-#     try:
-#         # Handle both text and binary file uploads
-#         if hasattr(csv_file, 'read'):
-#             file_data = csv_file.read().decode('utf-8')
-#         else:
-#             file_data = csv_file
-            
-#         io_string = io.StringIO(file_data)
-#         reader = csv.DictReader(io_string)
-        
-#         # Validate required columns
-#         required_columns = ['ear_tag_number', 'breed', 'breed_level', 'sex', 'type']
-#         missing_columns = [col for col in required_columns if col not in reader.fieldnames]
-        
-#         if missing_columns:
-#             results['errors'].append(f"Missing required columns: {', '.join(missing_columns)}")
-#             return results
-        
-#         # Process each row
-#         for row_num, row in enumerate(reader, start=2):  # start=2 to account for header row
-#             # Initialize ear_tag here so it's available in exception blocks
-#             ear_tag = 'Unknown'
-#             try:
-#                 with transaction.atomic():
-#                     # Clean and validate row data
-#                     cleaned_data = clean_sheep_row_data(row)
-                    
-#                     # Get ear_tag from cleaned data
-#                     ear_tag = cleaned_data['ear_tag_number']
-                    
-#                     # Check if sheep already exists
-#                     existing_sheep = None
-#                     try:
-#                         existing_sheep = Sheep.objects.get(ear_tag_number=ear_tag)
-#                     except Sheep.DoesNotExist:
-#                         existing_sheep = None
-                    
-#                     # Handle existing records based on update_existing flag
-#                     if existing_sheep:
-#                         if update_existing:
-#                             # Update existing record
-#                             sheep = update_sheep_record(existing_sheep, cleaned_data)
-#                             results['updated'].append(sheep)
-                            
-#                             # Prepare audit data with serializable values
-#                             audit_data = make_serializable_audit_data(cleaned_data)
-                            
-#                             # Log the update
-#                             AuditLog.objects.create(
-#                                 user=user,
-#                                 action='UPDATE',
-#                                 entity='Sheep',
-#                                 entity_id=sheep.ear_tag_number,
-#                                 new_values=audit_data,
-#                                 notes=f"Updated via CSV import"
-#                             )
-#                         else:
-#                             results['skipped'].append({'ear_tag_number': ear_tag, 'reason': 'Record already exists'})
-#                             continue
-#                     else:
-#                         # Create new record
-#                         sheep = create_sheep_record(cleaned_data)
-#                         results['created'].append(sheep)
-                        
-#                         # Prepare audit data with serializable values
-#                         audit_data = make_serializable_audit_data(cleaned_data)
-                        
-#                         # Log the creation
-#                         AuditLog.objects.create(
-#                             user=user,
-#                             action='CREATE',
-#                             entity='Sheep',
-#                             entity_id=sheep.ear_tag_number,
-#                             new_values=audit_data,
-#                             notes=f"Created via CSV import"
-#                         )
-                        
-#             except ValidationError as e:
-#                 results['errors'].append(f"Row {row_num} ({ear_tag}): {e}")
-#             except Exception as e:
-#                 results['errors'].append(f"Row {row_num} ({ear_tag}): Unexpected error - {str(e)}")
-                
-#     except Exception as e:
-#         results['errors'].append(f"File processing error: {str(e)}")
-    
-#     return results
-
-
-# def make_serializable_audit_data(cleaned_data):
-#     """
-#     Convert cleaned_data to JSON-serializable format for AuditLog
-#     """
-#     serializable_data = {}
-    
-#     for key, value in cleaned_data.items():
-#         if value is None:
-#             serializable_data[key] = None
-#         elif isinstance(value, (datetime.date, datetime.datetime)):
-#             # Convert date/datetime to ISO format string
-#             serializable_data[key] = value.isoformat()
-#         elif isinstance(value, Sheep):
-#             # Convert Sheep instance to ear tag number
-#             serializable_data[key] = value.ear_tag_number
-#         elif isinstance(value, (int, float, str, bool)):
-#             # These types are already JSON serializable
-#             serializable_data[key] = value
-#         else:
-#             # Convert any other type to string
-#             serializable_data[key] = str(value)
-    
-#     return serializable_data
-
-# def clean_sheep_row_data(row):
-#     """
-#     Clean and validate individual row data from CSV
-#     """
-#     cleaned_data = {}
-    
-#     # Required fields
-#     cleaned_data['ear_tag_number'] = row['ear_tag_number'].strip()
-#     if not cleaned_data['ear_tag_number']:
-#         raise ValidationError("Ear tag number is required")
-    
-#     # Breed validation
-#     breed = row['breed'].strip().upper()
-#     if breed not in dict(Sheep.BREED_CHOICES):
-#         raise ValidationError(f"Invalid breed: {breed}")
-#     cleaned_data['breed'] = breed
-    
-#     # Breed level validation
-#     try:
-#         breed_level = float(row['breed_level'])
-#         if not (0 <= breed_level <= 100):
-#             raise ValidationError("Breed level must be between 0 and 100")
-#         cleaned_data['breed_level'] = breed_level
-#     except (ValueError, TypeError):
-#         raise ValidationError("Breed level must be a number")
-    
-#     # Sex validation
-#     sex = row['sex'].strip().upper()
-#     if sex not in dict(Sheep.SEX_CHOICES):
-#         raise ValidationError(f"Invalid sex: {sex}")
-#     cleaned_data['sex'] = sex
-    
-#     # Type validation
-#     sheep_type = row['type'].strip().upper()
-#     if sheep_type not in dict(Sheep.TYPE_CHOICES):
-#         raise ValidationError(f"Invalid type: {sheep_type}")
-#     cleaned_data['type'] = sheep_type
-    
-#     # Optional date fields
-#     for date_field in ['date_of_birth', 'separation_date']:
-#         if row.get(date_field) and row[date_field].strip():
-#             try:
-#                 cleaned_data[date_field] = datetime.strptime(row[date_field].strip(), '%Y-%m-%d').date()
-#             except ValueError:
-#                 raise ValidationError(f"Invalid {date_field} format. Use YYYY-MM-DD")
-#         else:
-#             cleaned_data[date_field] = None
-    
-#     # Optional float fields
-#     for float_field in ['birth_weight', 'separation_weight']:
-#         if row.get(float_field) and row[float_field].strip():
-#             try:
-#                 cleaned_data[float_field] = float(row[float_field])
-#             except ValueError:
-#                 raise ValidationError(f"Invalid {float_field}: must be a number")
-#         else:
-#             cleaned_data[float_field] = None
-    
-#     # Parent relationships
-#     for parent_field in ['parent_ewe', 'parent_ram']:
-#         if row.get(parent_field) and row[parent_field].strip():
-#             parent_tag = row[parent_field].strip()
-#             try:
-#                 parent_sheep = Sheep.objects.get(ear_tag_number=parent_tag)
-                
-#                 # Validate parent type
-#                 if parent_field == 'parent_ewe' and parent_sheep.sex != 'FEMALE':
-#                     raise ValidationError(f"Parent ewe {parent_tag} is not female")
-#                 if parent_field == 'parent_ram' and parent_sheep.sex != 'MALE':
-#                     raise ValidationError(f"Parent ram {parent_tag} is not male")
-                    
-#                 cleaned_data[parent_field] = parent_sheep
-#             except Sheep.DoesNotExist:
-#                 raise ValidationError(f"{parent_field} {parent_tag} not found")
-#         else:
-#             cleaned_data[parent_field] = None
-    
-#     # Boolean fields
-#     for bool_field in ['is_healthy', 'flagged_for_culling']:
-#         if row.get(bool_field):
-#             value = row[bool_field].strip().upper()
-#             cleaned_data[bool_field] = value in ['TRUE', 'YES', '1', 'T']
-#         else:
-#             cleaned_data[bool_field] = False
-    
-#     # Text fields
-#     for text_field in ['health_notes', 'culling_reason']:
-#         cleaned_data[text_field] = row.get(text_field, '').strip()
-    
-#     # State validation
-#     if row.get('state'):
-#         state = row['state'].strip().upper()
-#         if state not in dict(Sheep.STATE_CHOICES):
-#             raise ValidationError(f"Invalid state: {state}")
-#         cleaned_data['state'] = state
-#     else:
-#         cleaned_data['state'] = 'SCILENT'
-    
-#     return cleaned_data
-# def clean_sheep_row_data(row):
-#     """
-#     Clean and validate individual row data from CSV
-#     """
-#     cleaned_data = {}
-    
-#     # Required fields
-#     cleaned_data['ear_tag_number'] = row['ear_tag_number'].strip()
-#     if not cleaned_data['ear_tag_number']:
-#         raise ValidationError("Ear tag number is required")
-    
-#     # Breed validation
-#     breed = row['breed'].strip().upper()
-#     if breed not in dict(Sheep.BREED_CHOICES):
-#         raise ValidationError(f"Invalid breed: {breed}")
-#     cleaned_data['breed'] = breed
-    
-#     # Breed level validation
-#     try:
-#         breed_level = float(row['breed_level'])
-#         if not (0 <= breed_level <= 100):
-#             raise ValidationError("Breed level must be between 0 and 100")
-#         cleaned_data['breed_level'] = breed_level
-#     except (ValueError, TypeError):
-#         raise ValidationError("Breed level must be a number")
-    
-#     # Sex validation
-#     sex = row['sex'].strip().upper()
-#     if sex not in dict(Sheep.SEX_CHOICES):
-#         raise ValidationError(f"Invalid sex: {sex}")
-#     cleaned_data['sex'] = sex
-    
-#     # Type validation
-#     sheep_type = row['type'].strip().upper()
-#     if sheep_type not in dict(Sheep.TYPE_CHOICES):
-#         raise ValidationError(f"Invalid type: {sheep_type}")
-#     cleaned_data['type'] = sheep_type
-    
-#     # Optional date fields - FIXED: Use datetime.datetime instead of just datetime
-#     for date_field in ['date_of_birth', 'separation_date']:
-#         if row.get(date_field) and row[date_field].strip():
-#             try:
-#                 # Use datetime.datetime.strptime instead of datetime.strptime
-#                 cleaned_data[date_field] = datetime.datetime.strptime(row[date_field].strip(), '%Y-%m-%d').date()
-#             except ValueError:
-#                 raise ValidationError(f"Invalid {date_field} format. Use YYYY-MM-DD")
-#         else:
-#             cleaned_data[date_field] = None
-    
-#     # Optional float fields
-#     for float_field in ['birth_weight', 'separation_weight']:
-#         if row.get(float_field) and row[float_field].strip():
-#             try:
-#                 cleaned_data[float_field] = float(row[float_field])
-#             except ValueError:
-#                 raise ValidationError(f"Invalid {float_field}: must be a number")
-#         else:
-#             cleaned_data[float_field] = None
-    
-#     # Parent relationships
-#     for parent_field in ['parent_ewe', 'parent_ram']:
-#         if row.get(parent_field) and row[parent_field].strip():
-#             parent_tag = row[parent_field].strip()
-#             try:
-#                 parent_sheep = Sheep.objects.get(ear_tag_number=parent_tag)
-                
-#                 # Validate parent type
-#                 if parent_field == 'parent_ewe' and parent_sheep.sex != 'FEMALE':
-#                     raise ValidationError(f"Parent ewe {parent_tag} is not female")
-#                 if parent_field == 'parent_ram' and parent_sheep.sex != 'MALE':
-#                     raise ValidationError(f"Parent ram {parent_tag} is not male")
-                    
-#                 cleaned_data[parent_field] = parent_sheep
-#             except Sheep.DoesNotExist:
-#                 raise ValidationError(f"{parent_field} {parent_tag} not found")
-#         else:
-#             cleaned_data[parent_field] = None
-    
-#     # Boolean fields
-#     for bool_field in ['is_healthy', 'flagged_for_culling']:
-#         if row.get(bool_field):
-#             value = row[bool_field].strip().upper()
-#             cleaned_data[bool_field] = value in ['TRUE', 'YES', '1', 'T']
-#         else:
-#             cleaned_data[bool_field] = False
-    
-#     # Text fields
-#     for text_field in ['health_notes', 'culling_reason']:
-#         cleaned_data[text_field] = row.get(text_field, '').strip()
-    
-#     # State validation
-#     if row.get('state'):
-#         state = row['state'].strip().upper()
-#         if state not in dict(Sheep.STATE_CHOICES):
-#             raise ValidationError(f"Invalid state: {state}")
-#         cleaned_data['state'] = state
-#     else:
-#         cleaned_data['state'] = 'SCILENT'
-    
-#     return cleaned_data
-
-# def create_sheep_record(cleaned_data):
-#     """
-#     Create a new Sheep record from cleaned data
-#     """
-#     sheep = Sheep.objects.create(
-#         ear_tag_number=cleaned_data['ear_tag_number'],
-#         breed=cleaned_data['breed'],
-#         breed_level=cleaned_data['breed_level'],
-#         sex=cleaned_data['sex'],
-#         type=cleaned_data['type'],
-#         date_of_birth=cleaned_data['date_of_birth'],
-#         birth_weight=cleaned_data['birth_weight'],
-#         separation_date=cleaned_data['separation_date'],
-#         separation_weight=cleaned_data['separation_weight'],
-#         parent_ewe=cleaned_data['parent_ewe'],
-#         parent_ram=cleaned_data['parent_ram'],
-#         is_healthy=cleaned_data['is_healthy'],
-#         health_notes=cleaned_data['health_notes'],
-#         state=cleaned_data['state'],
-#         flagged_for_culling=cleaned_data['flagged_for_culling'],
-#         culling_reason=cleaned_data['culling_reason']
-#     )
-    
-#     # Run validation and auto-culling logic
-#     sheep.full_clean()
-#     sheep.save()
-    
-#     return sheep
-
-# def update_sheep_record(existing_sheep, cleaned_data):
-#     """
-#     Update an existing Sheep record with cleaned data
-#     """
-#     # Update fields
-#     for field, value in cleaned_data.items():
-#         if hasattr(existing_sheep, field) and field != 'ear_tag_number':  # Don't update primary key
-#             setattr(existing_sheep, field, value)
-    
-#     # Run validation and auto-culling logic
-#     existing_sheep.full_clean()
-#     existing_sheep.save()
-    
-#     return existing_sheep
-
-# @login_required
-# def download_sample_csv(request):
-#     """
-#     View to serve a sample CSV template
-#     """
-#     from django.http import HttpResponse
-    
-#     # Create sample CSV content
-#     sample_content = """ear_tag_number,breed,breed_level,sex,type,date_of_birth,birth_weight,separation_date,separation_weight,parent_ewe,parent_ram,is_healthy,health_notes,state,flagged_for_culling,culling_reason
-# SH001,LOCAL,100.0,FEMALE,EWE,2022-03-15,4.2,2022-08-20,25.5,,,TRUE,,SCILENT,FALSE,
-# SH002,PA,75.0,MALE,RAM,2021-05-10,4.5,2021-10-15,28.0,,,TRUE,,SCILENT,FALSE,
-# SH003,PD,50.0,FEMALE,LAMB,2023-01-20,3.8,,,,SH001,SH002,TRUE,,SCILENT,FALSE,
-# SH004,AC,87.5,MALE,YOUNG_RAM,2022-07-05,4.1,2022-12-10,24.8,,,TRUE,,SCILENT,FALSE,
-# SH005,DC,62.5,FEMALE,GIMMER,2021-11-12,4.3,2022-04-18,26.2,,,FALSE,"Minor hoof issue",SCILENT,FALSE,
-# """
-    
-#     response = HttpResponse(sample_content, content_type='text/csv')
-#     response['Content-Disposition'] = 'attachment; filename="sample_sheep_import.csv"'
-    
-#     return response
-
-# @login_required
-# def download_csv_template(request):
-#     """Download a CSV template file"""
-#     response = HttpResponse(content_type='text/csv')
-#     response['Content-Disposition'] = 'attachment; filename="sheep_import_template.csv"'
-    
-#     writer = csv.writer(response)
-#     # Write header row
-#     writer.writerow([
-#         'ear_tag_number', 'breed', 'breed_level', 'sex', 'type', 
-#         'date_of_birth', 'is_healthy'
-#     ])
-    
-#     # Write example rows
-#     writer.writerow(['TAG001', 'PD', '90', 'MALE', 'RAM', '2022-03-15', 'true'])
-#     writer.writerow(['TAG002', 'LOCAL', '85', 'FEMALE', 'EWE', '2021-05-20', 'true'])
-#     writer.writerow(['TAG003', 'PA', '92', 'FEMALE', 'YOUNG_EWE', '2023-01-10', 'false'])
-    
-#     return response
-
-# @login_required
-# def export_sheep_csv(request):
-#     """Export all sheep data to CSV"""
-#     response = HttpResponse(content_type='text/csv')
-#     response['Content-Disposition'] = 'attachment; filename="sheep_export.csv"'
-    
-#     writer = csv.writer(response)
-#     # Write header
-#     writer.writerow([
-#         'Ear Tag Number', 'Breed', 'Breed Level', 'Sex', 'Type',
-#         'Date of Birth', 'Healthy', 'Age (days)'
-#     ])
-    
-#     # Write data rows
-#     sheep_list = Sheep.objects.all()
-#     for sheep in sheep_list:
-#         age_days = ''
-#         if sheep.date_of_birth:
-#             age_days = (timezone.now().date() - sheep.date_of_birth).days
-        
-#         writer.writerow([
-#             sheep.ear_tag_number,
-#             sheep.breed,
-#             sheep.breed_level,
-#             sheep.sex,
-#             sheep.type,
-#             sheep.date_of_birth.strftime('%Y-%m-%d') if sheep.date_of_birth else '',
-#             'Yes' if sheep.is_healthy else 'No',
-#             age_days
-#         ])
-    
-#     return response
 
 
 from django.views.generic import TemplateView, View
@@ -1288,7 +494,7 @@ def home(request):
         if user is not None:
             login(request, user)
             messages.success(request, "You Have Been Logged in!")
-            return redirect('home')
+            return redirect('breeding_selection')
         else:
                 messages.success(request,"There was an Error Logging In, Please Try Again...")
                 return redirect('home')
@@ -1319,23 +525,23 @@ def delete_record(request, pk):
         delete_it.delete()
 
         messages.success(request, "Record deleted does successfully")
-        return redirect('home')
+        return redirect('breeding_selection')
      else:
         messages.success(request, "You must to loggedin to perform this")
         return redirect('home')
 
-def add_record(request):
-     form = AddRecordForm(request.POST or None)
-     if request.user.is_authenticated:
-          if request.method =="POST":
-               if form.is_valid():
-                    add_record = form.save()
-                    messages.success(request, "Record Added...")
-                    return redirect('home')
-          return render(request, 'add_record.html', {'form':form})
-     else:
-          messages.success(request, "You must be logged in...")
-          return redirect('home')
+# def add_record(request):
+#      form = AddRecordForm(request.POST or None)
+#      if request.user.is_authenticated:
+#           if request.method =="POST":
+#                if form.is_valid():
+#                     add_record = form.save()
+#                     messages.success(request, "Record Added...")
+#                     return redirect('home')
+#           return render(request, 'add_record.html', {'form':form})
+#      else:
+#           messages.success(request, "You must be logged in...")
+#           return redirect('home')
      
 def update_record(request, pk):
      if request.user.is_authenticated:
@@ -1344,7 +550,7 @@ def update_record(request, pk):
           if form.is_valid():
                form.save()
                messages.success(request, "Record has been updated!")
-               return redirect('home')
+               return redirect('breeding_selection')
           return render(request, 'update_record.html', {'form':form})
      else:
           messages.success(request, "You must be logged in...")
@@ -1352,6 +558,7 @@ def update_record(request, pk):
 
 
 @login_required
+@allowed_users(allowed_roles=['Breeder',])
 def breeding_selection(request):
     """Main breeding selection view"""
     rams = get_available_rams()
@@ -1384,13 +591,14 @@ def breeding_selection(request):
     return render(request, 'breeding.html', context)   
      
 @login_required
+@allowed_users(allowed_roles=['Breeder',])
 def flash_rams_state(request):
     if request.method == "POST":
         selected = request.POST.getlist("rams")
 
         updated = Sheep.objects.filter(
             ear_tag_number__in=selected,
-            state="SCILENT",
+            state="ACTIVE",
             type="RAM"
         ).update(state="FLASHING")
 
@@ -1398,13 +606,14 @@ def flash_rams_state(request):
     return redirect('breeding_selection')
 
 @login_required
+@allowed_users(allowed_roles=['Breeder',])
 def flash_ewes_state(request):
     if request.method == "POST":
         selected = request.POST.getlist("ewes")
 
         updated = Sheep.objects.filter(
             ear_tag_number__in=selected,
-            state="SCILENT",
+            state="ACTIVE",
             type="EWE"
         ).update(state="FLASHING")
 
@@ -1413,6 +622,7 @@ def flash_ewes_state(request):
 
 
 @login_required
+@allowed_users(allowed_roles=['Breeder',])
 def breed_rams_state(request):
     if request.method == "POST":
         selected_rams = request.POST.getlist("rams")
@@ -1438,6 +648,7 @@ def breed_rams_state(request):
 
 
 @login_required
+@allowed_users(allowed_roles=['Breeder',])
 def breed_sheep_state(request):
     if request.method == "POST":
         selected_sheep = request.POST.getlist("sheeps")
@@ -1461,178 +672,10 @@ def breed_sheep_state(request):
 
     return redirect('breeding_selection')
 
-# &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
-
-# class BreedingTaskView(View):
-#     template_name = 'breeding_task.html'
-    
-#     def get(self, request):
-#         # Get selected rams from session
-#         selected_ram_ids = request.session.get('selected_rams', [])
-        
-#         print(f"DEBUG: Selected ram IDs from session: {selected_ram_ids}")
-        
-#         if not selected_ram_ids:
-#             messages.warning(request, "Please select rams first")
-#             return redirect('breeding_selection')
-        
-#         try:
-#             # Validate rams exist
-#             rams = Sheep.objects.filter(ear_tag_number__in=selected_ram_ids)
-#             if len(rams) != len(selected_ram_ids):
-#                 messages.error(request, "Some selected rams no longer exist")
-#                 return redirect('breeding_selection')
-            
-#             print(f"DEBUG: Found {len(rams)} rams")
-            
-#             # Get ram objects with capacity info
-#             for ram in rams:
-#                 ram.capacity_info = get_ram_capacity_info(ram)
-#                 print(f"DEBUG: Ram {ram.ear_tag_number} capacity: {ram.capacity_info}")
-            
-#             # Get ALL compatible ewes for all selected rams
-#             all_compatible_ewes = set()
-#             ram_compatible_ewes = {}
-#             ram_compatible_ewes_by_ewe = {}  # Reverse mapping for template
-            
-#             for ram in rams:
-#                 compatible_ewes = get_compatible_ewes(ram)
-#                 ram_compatible_ewes[ram.ear_tag_number] = compatible_ewes
-#                 all_compatible_ewes.update(compatible_ewes)
-                
-#                 # Build reverse mapping
-#                 for ewe in compatible_ewes:
-#                     if ewe.ear_tag_number not in ram_compatible_ewes_by_ewe:
-#                         ram_compatible_ewes_by_ewe[ewe.ear_tag_number] = []
-#                     ram_compatible_ewes_by_ewe[ewe.ear_tag_number].append(ram.ear_tag_number)
-            
-#             print(f"DEBUG: Found {len(all_compatible_ewes)} compatible ewes")
-            
-#             # Distribute ewes with breed priority and no duplicates
-#             distributed_assignments = distribute_ewes_by_priority(rams, list(all_compatible_ewes))
-#             print(f"DEBUG: Distributed assignments: {distributed_assignments}")
-            
-#             # Get unassigned ewes (incompatible + not assigned due to capacity/priority)
-#             assigned_ewes = set()
-#             for ewes in distributed_assignments.values():
-#                 assigned_ewes.update([ewe.ear_tag_number for ewe in ewes])
-            
-#             unassigned_ewes = Sheep.objects.filter(
-#                 sex='female',
-#                 type__in=['ewe', 'gimmer'],
-#                 is_healthy=True
-#             ).exclude(ear_tag_number__in=assigned_ewes)
-            
-#             print(f"DEBUG: Found {len(unassigned_ewes)} unassigned ewes")
-            
-#             # Prepare JSON data for template
-#             rams_json = self._prepare_rams_json(rams)
-#             ewes_json = self._prepare_ewes_json(all_compatible_ewes, unassigned_ewes, ram_compatible_ewes_by_ewe)
-#             initial_assignments = self._prepare_initial_assignments(distributed_assignments)
-            
-#             print(f"DEBUG: Rams JSON prepared: {len(rams_json)} rams")
-#             print(f"DEBUG: Ewes JSON prepared: {len(ewes_json)} ewes")
-            
-#             context = {
-#                 'rams': rams,
-#                 'distributed_assignments': distributed_assignments,
-#                 'unassigned_ewes': unassigned_ewes,
-#                 'ram_compatible_ewes_by_ewe': ram_compatible_ewes_by_ewe,
-#                 'initial_assignments_json': json.dumps(initial_assignments),
-#                 'rams_json': json.dumps(rams_json),
-#                 'ewes_json': json.dumps(ewes_json),
-#             }
-#             return render(request, self.template_name, context)
-            
-#         except Exception as e:
-#             logger.error(f"Error in BreedingTaskView GET: {str(e)}")
-#             import traceback
-#             traceback.print_exc()
-#             messages.error(request, f"Error loading breeding task: {str(e)}")
-#             return redirect('breeding_selection')
-    
-#     def post(self, request):
-#         """Handle form submission - redirect to breeding_info"""
-#         print("DEBUG: BreedingTaskView POST received")
-        
-#         try:
-#             breeding_assignments = json.loads(request.POST.get('breedingAssignments', '{}'))
-#             print(f"DEBUG: Received breeding assignments: {breeding_assignments}")
-#         except json.JSONDecodeError as e:
-#             print(f"DEBUG: JSON decode error: {e}")
-#             messages.error(request, "Invalid breeding assignments data")
-#             return redirect('breeding_task')
-        
-#         if not breeding_assignments:
-#             messages.error(request, "No breeding assignments provided")
-#             return redirect('breeding_task')
-        
-#         # Validate no duplicate ewes
-#         all_assigned_ewes = []
-#         for ewe_list in breeding_assignments.values():
-#             all_assigned_ewes.extend(ewe_list)
-        
-#         if len(all_assigned_ewes) != len(set(all_assigned_ewes)):
-#             messages.error(request, "Error: Some ewes are assigned to multiple rams")
-#             return redirect('breeding_task')
-        
-#         # Store in session
-#         request.session['breeding_assignments'] = breeding_assignments
-#         request.session.modified = True
-        
-#         print(f"DEBUG: Stored assignments in session, redirecting to breeding_info")
-#         return redirect('breeding_info')
-    
-#     def _prepare_rams_json(self, rams):
-#         """Prepare rams data for JSON serialization"""
-#         rams_data = []
-#         for ram in rams:
-#             rams_data.append({
-#                 'ear_tag': ram.ear_tag_number,
-#                 'breed': ram.breed,
-#                 'type': ram.type,
-#                 'remaining': ram.capacity_info['remaining'],
-#                 'capacity': ram.capacity_info['max'],
-#                 'current': ram.capacity_info['current']
-#             })
-#         return rams_data
-    
-#     def _prepare_ewes_json(self, compatible_ewes, unassigned_ewes, ram_compatible_ewes_by_ewe):
-#         """Prepare ewes data for JSON serialization"""
-#         ewes_data = {}
-        
-#         # Add compatible ewes
-#         for ewe in compatible_ewes:
-#             ewes_data[ewe.ear_tag_number] = {
-#                 'ear_tag': ewe.ear_tag_number,
-#                 'breed': ewe.breed,
-#                 'type': ewe.type,
-#                 'compatible_with': ram_compatible_ewes_by_ewe.get(ewe.ear_tag_number, [])
-#             }
-        
-#         # Add unassigned ewes
-#         for ewe in unassigned_ewes:
-#             ewes_data[ewe.ear_tag_number] = {
-#                 'ear_tag': ewe.ear_tag_number,
-#                 'breed': ewe.breed,
-#                 'type': ewe.type,
-#                 'compatible_with': ram_compatible_ewes_by_ewe.get(ewe.ear_tag_number, [])
-#             }
-        
-#         return ewes_data
-    
-#     def _prepare_initial_assignments(self, distributed_assignments):
-#         """Prepare initial assignments for JSON serialization"""
-#         initial_assignments = {}
-#         for ram_id, ewes in distributed_assignments.items():
-#             initial_assignments[ram_id] = [ewe.ear_tag_number for ewe in ewes]
-#         return initial_assignments
-
-# views.py
 
 from django.views.decorators.http import require_POST
-# ... existing imports ...
+
 
 # 1. NEW VIEW: Handle the initial Ram selection from breeding.html
 @login_required
@@ -1666,6 +709,7 @@ def process_ram_selection(request):
 
 
 # 2. UPDATED VIEW: The main Breeding Task logic
+
 class BreedingTaskView(View):
     template_name = 'breeding_task.html'
     
@@ -1782,235 +826,10 @@ class BreedingTaskView(View):
             messages.error(request, f"Error saving assignments: {e}")
             return redirect('breeding_task')
 
-# class BreedingInfoView(View):
-#     template_name = 'breeding_info.html'
-    
-#     def get(self, request):
-#         # Get final assignments from session (for confirmation after POST)
-#         breeding_assignments = request.session.get('breeding_assignments', {})
-        
-#         if not breeding_assignments:
-#             messages.warning(request, "No breeding assignments found")
-#             return redirect('breeding_task')
-        
-#         # Prepare breeding information for display
-#         breeding_info = self._prepare_breeding_info(breeding_assignments)
-        
-#         context = {
-#             'breeding_info': breeding_info
-#         }
-#         return render(request, self.template_name, context)
-    
-#     def post(self, request):
-#         """Handle final breeding plan creation"""
-#         try:
-#             # Get assignments from POST data, not session
-#             breeding_assignments_json = request.POST.get('breedingAssignments', '{}')
-#             breeding_assignments = json.loads(breeding_assignments_json)
-            
-#             logger.info(f"Received breeding assignments: {breeding_assignments}")
-            
-#             if not breeding_assignments:
-#                 messages.error(request, "No breeding assignments provided")
-#                 return redirect('breeding_task')
-            
-#             # Store in session for confirmation page
-#             request.session['breeding_assignments'] = breeding_assignments
-            
-#             # Create breeding cycles
-#             created_count = self._create_breeding_cycles(breeding_assignments)
-            
-#             if created_count > 0:
-#                 messages.success(request, f"Successfully created {created_count} breeding cycles")
-#             else:
-#                 messages.warning(request, "No breeding cycles were created")
-                
-#             return redirect('breeding_info')
-            
-#         except json.JSONDecodeError as e:
-#             messages.error(request, f"Invalid data format: {str(e)}")
-#             return redirect('breeding_task')
-#         except Exception as e:
-#             logger.error(f"Error creating breeding cycles: {str(e)}")
-#             messages.error(request, f"Error creating breeding cycles: {str(e)}")
-#             return redirect('breeding_task')
-    
-#     def _prepare_breeding_info(self, breeding_assignments):
-#         """Prepare breeding information for display"""
-#         breeding_info = []
-#         for ram_id, ewe_ids in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                 ewes = Sheep.objects.filter(ear_tag_number__in=ewe_ids)
-                
-#                 for ewe in ewes:
-#                     breeding_info.append({
-#                         'ram': ram,
-#                         'ewe': ewe,
-#                         'start_date': date.today(),
-#                         'expected_birth_date': date.today() + timedelta(days=155),
-#                         'capacity_info': get_ram_capacity_info(ram)
-#                     })
-#             except Sheep.DoesNotExist as e:
-#                 logger.warning(f"Sheep not found: {e}")
-#                 continue
-        
-#         return breeding_info
-    
-#     def _create_breeding_cycles(self, breeding_assignments):
-#         """Create breeding cycles in database"""
-#         created_count = 0
-#         for ram_id, ewe_ids in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                 for ewe_id in ewe_ids:
-#                     try:
-#                         ewe = Sheep.objects.get(ear_tag_number=ewe_id)
-                        
-#                         # Check if breeding cycle already exists to avoid duplicates
-#                         existing_cycle = BreedingCycle.objects.filter(
-#                             ewe=ewe, 
-#                             ram=ram, 
-#                             start_date=date.today()
-#                         ).first()
-                        
-#                         if existing_cycle:
-#                             logger.info(f"Breeding cycle already exists for {ewe_id} and {ram_id}")
-#                             continue
-                        
-#                         # Create breeding cycle
-#                         breeding_cycle = BreedingCycle.objects.create(
-#                             cycle_id=f"BC_{ram_id}_{ewe_id}_{date.today().strftime('%Y%m%d')}",
-#                             ewe=ewe,
-#                             ram=ram,
-#                             start_date=date.today(),
-#                             status='planned'
-#                         )
-#                         created_count += 1
-#                         logger.info(f"Created breeding cycle: {breeding_cycle.cycle_id}")
-                        
-#                     except Sheep.DoesNotExist:
-#                         logger.warning(f"Ewe not found: {ewe_id}")
-#                         continue
-#             except Sheep.DoesNotExist:
-#                 logger.warning(f"Ram not found: {ram_id}")
-#                 continue
-        
-#         return created_count
 
-
-# views.py
-
-# class BreedingInfoView(View):
-#     template_name = 'breeding_info.html'
-    
-#     def get(self, request):
-#         """
-#         Display the breeding plan stored in the session for review.
-#         """
-#         # 1. Retrieve draft assignments from session
-#         breeding_assignments = request.session.get('breeding_assignments', {})
-        
-#         # 2. Redirect if empty (e.g. direct access without selection)
-#         if not breeding_assignments:
-#             messages.warning(request, "No breeding plan found. Please select rams and assign ewes first.")
-#             return redirect('breeding_task')
-        
-#         # 3. Prepare display data (Ram objects, Ewe objects, Dates)
-#         breeding_info = []
-#         today = date.today()
-#         end_date = today + timedelta(days=51)  # Example breeding period
-#         expected_birth = today + timedelta(days=155) # Standard gestation
-#         expected_birth_end_date = end_date + timedelta(days=155) # Standard gestation
-
-#         for ram_tag, ewe_tags in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_tag)
-#                 # Get all assigned ewes for this ram
-#                 ewes = Sheep.objects.filter(ear_tag_number__in=ewe_tags)
-                
-#                 # Get capacity for progress bars
-#                 capacity = get_ram_capacity_info(ram) 
-#                 # Note: This capacity calculation might need to account for 
-#                 # the *proposed* ewes if you want to show "Projected Capacity".
-#                 # For now, we show current DB capacity + session additions if needed, 
-#                 # or just current status.
-                
-#                 for ewe in ewes:
-#                     breeding_info.append({
-#                         'ram': ram,
-#                         'ewe': ewe,
-#                         'start_date': today,
-#                         'end_date': end_date,
-#                         'expected_birth_date': expected_birth,
-#                         'expected_birth_end_date': expected_birth_end_date,
-#                         'capacity_info': capacity
-#                     })
-#             except Sheep.DoesNotExist:
-#                 continue
-#             # --- NEW: Sort by Ram Breed to enable grouping in template ---
-#         breeding_info.sort(key=lambda x: x['ram'].breed)
-        
-#         context = {
-#             'breeding_info': breeding_info
-#         }
-#         return render(request, self.template_name, context)
-    
-#     def post(self, request):
-#         """
-#         Commit the breeding plan from session to the database.
-#         """
-#         breeding_assignments = request.session.get('breeding_assignments', {})
-        
-#         if not breeding_assignments:
-#             messages.error(request, "Session expired or empty. Please try again.")
-#             return redirect('breeding_task')
-        
-#         created_count = 0
-        
-#         try:
-#             with transaction.atomic(): # Ensure all or nothing
-#                 for ram_tag, ewe_tags in breeding_assignments.items():
-#                     ram = Sheep.objects.get(ear_tag_number=ram_tag)
-                    
-#                     for ewe_tag in ewe_tags:
-#                         ewe = Sheep.objects.get(ear_tag_number=ewe_tag)
-                        
-#                         # Generate ID
-#                         cycle_id = f"BC_{ram.ear_tag_number}_{ewe.ear_tag_number}_{date.today().strftime('%Y%m%d')}"
-                        
-#                         # Avoid duplicates
-#                         if BreedingCycle.objects.filter(cycle_id=cycle_id).exists():
-#                             continue
-
-#                         BreedingCycle.objects.create(
-#                             cycle_id=cycle_id,
-#                             ewe=ewe,
-#                             ram=ram,
-#                             start_date=date.today(),
-#                             status='PLANNED', # or 'IN_PROGRESS' depending on your workflow
-#                             created_by=request.user if request.user.is_authenticated else None
-#                         )
-#                         created_count += 1
-            
-#             # Success! Clear the session
-#             del request.session['breeding_assignments']
-#             # Optional: Clear selected rams too
-#             if 'selected_rams' in request.session:
-#                 del request.session['selected_rams']
-                
-#             messages.success(request, f"Successfully created {created_count} breeding cycles!")
-#             return redirect('home') # Redirect to Dashboard/Home
-            
-#         except Exception as e:
-#             logger.error(f"Error saving breeding plan: {e}")
-#             messages.error(request, f"An error occurred while saving: {e}")
-#             return redirect('breeding_info')
-
-# views.py
 
 from django.db import transaction # Ensure this is imported
-# ... other imports
+
 
 class BreedingInfoView(View):
     template_name = 'breeding_info.html'
@@ -2114,6 +933,7 @@ class BreedingInfoView(View):
                 # --- FIX: Update all assigned Ewes' states outside the inner loop ---
                 # Retrieve all unique Ewe objects assigned
                 Ewes = Sheep.objects.filter(ear_tag_number__in=list(ewe_tags_to_update))
+                Rams = Sheep.objects.filter(ear_tag_number__in=list(breeding_assignments.keys()))
                 
                 # Bulk update the state to 'BREEDING'
                 Ewes.update(state='BREEDING') 
@@ -2138,6 +958,40 @@ class BreedingInfoView(View):
             return redirect('breeding_info')
         
 
+
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger # Import Paginator
+from django.shortcuts import render
+from django.views.generic import View
+from .models import BreedingCycle
+
+class BreedingHistoryView(View):
+    template_name = 'breeding_history.html'
+    
+    def get(self, request):
+        """
+        Display historical breeding records grouped by date with pagination.
+        """
+        # 1. Fetch all cycles, ordered by newest date first
+        all_cycles_list = BreedingCycle.objects.select_related('ram', 'ewe').order_by('-start_date')
+        
+        # 2. Set up Pagination (10 entries per page)
+        paginator = Paginator(all_cycles_list, 10) 
+        
+        page_number = request.GET.get('page')
+        try:
+            cycles = paginator.page(page_number)
+        except PageNotAnInteger:
+            # If page is not an integer, deliver first page.
+            cycles = paginator.page(1)
+        except EmptyPage:
+            # If page is out of range (e.g. 9999), deliver last page of results.
+            cycles = paginator.page(paginator.num_pages)
+        
+        context = {
+            'cycles': cycles # This is now a Page object, not the full list
+        }
+        return render(request, self.template_name, context)
+    
 @login_required
 def debug_breeding_flow(request):
     """Debug view to test the entire breeding flow"""
@@ -2155,6 +1009,7 @@ def debug_breeding_flow(request):
     return render(request, 'debug_breeding.html')
 
 @login_required
+@allowed_users(allowed_roles=['Breeder',])
 def create_breeding_cycle(request):
     if request.method == 'POST':
         try:
@@ -2192,1383 +1047,4 @@ def create_breeding_cycle(request):
 
     return JsonResponse({'success': False, 'message': 'Invalid request method'})
 
-    # &&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&   
-# @login_required
-# def breeding_task(request):
-#     template_name = 'breeding_task.html'
     
-#     def get(self, request):
-#         # Get selected rams from session with debug
-#         selected_ram_ids = request.session.get('selected_rams', [])
-#         print(f"DEBUG BreedingTaskView GET - Session keys: {list(request.session.keys())}")
-#         print(f"DEBUG BreedingTaskView GET - Selected rams from session: {selected_ram_ids}")
-        
-#         if not selected_ram_ids:
-#             messages.warning(request, "Please select rams first")
-#             return redirect('breeding_selection')
-        
-#         try:
-#             # Get ram objects
-#             rams = Sheep.objects.filter(ear_tag_number__in=selected_ram_ids)
-#             if not rams.exists():
-#                 messages.error(request, "Selected rams not found in database")
-#                 return redirect('breeding_selection')
-                
-#             # Add capacity info
-#             for ram in rams:
-#                 ram.capacity_info = get_ram_capacity_info(ram)
-            
-#             # Get compatible ewes
-#             all_compatible_ewes = set()
-#             for ram in rams:
-#                 compatible_ewes = get_compatible_ewes(ram)
-#                 all_compatible_ewes.update(compatible_ewes)
-            
-#             # Distribute ewes
-#             distributed_assignments = self.distribute_ewes_equally(rams, list(all_compatible_ewes))
-            
-#             # Get unassigned ewes
-#             unassigned_ewes = Sheep.objects.filter(
-#                 sex='female',
-#                 type__in=['ewe', 'gimmer'],
-#                 is_healthy=True
-#             ).exclude(ear_tag_number__in=[ewe.ear_tag_number for ewe in all_compatible_ewes])
-            
-#             # Prepare JSON data
-#             import json
-#             initial_assignments_dict = {}
-#             for ram_ear, ewes in distributed_assignments.items():
-#                 initial_assignments_dict[ram_ear] = [
-#                     {"ear_tag": ewe.ear_tag_number, "breed": ewe.breed} 
-#                     for ewe in ewes
-#                 ]
-            
-#             context = {
-#                 'rams': rams,
-#                 'distributed_assignments': distributed_assignments,
-#                 'unassigned_ewes': unassigned_ewes,
-#                 'initial_assignments_json': json.dumps(initial_assignments_dict),
-#             }
-            
-#             print(f"DEBUG - Context prepared with {len(rams)} rams and {len(unassigned_ewes)} unassigned ewes")
-#             return render(request, self.template_name, context)
-            
-#         except Exception as e:
-#             print(f"ERROR in BreedingTaskView GET: {str(e)}")
-#             import traceback
-#             traceback.print_exc()
-#             messages.error(request, f"Error loading breeding task: {str(e)}")
-#             return redirect('breeding_selection')
-    
-#     def post(self, request):
-#         """Handle form submission"""
-#         print(f"DEBUG BreedingTaskView POST - Session keys: {list(request.session.keys())}")
-#         print(f"DEBUG BreedingTaskView POST - Selected rams in session: {request.session.get('selected_rams')}")
-        
-#         # Get breeding assignments from form
-#         breeding_assignments_json = request.POST.get('breedingAssignments', '{}')
-#         print(f"DEBUG - Received breedingAssignments: {breeding_assignments_json}")
-        
-#         try:
-#             breeding_assignments = json.loads(breeding_assignments_json)
-#         except json.JSONDecodeError as e:
-#             print(f"ERROR - JSON decode error: {e}")
-#             messages.error(request, "Invalid breeding assignments data")
-#             return redirect('breeding_task')
-        
-#         if not breeding_assignments:
-#             messages.error(request, "No breeding assignments provided")
-#             return redirect('breeding_task')
-        
-#         # Validate we have assignments
-#         total_assignments = sum(len(ewes) for ewes in breeding_assignments.values())
-#         if total_assignments == 0:
-#             messages.error(request, "Please assign at least one ewe before proceeding")
-#             return redirect('breeding_task')
-        
-#         # Store in session
-#         request.session['breeding_assignments'] = breeding_assignments
-#         request.session.modified = True
-        
-#         print(f"DEBUG - Stored breeding assignments in session: {request.session.get('breeding_assignments')}")
-#         return redirect('breeding_info')
-    
-#     def distribute_ewes_equally(self, rams, all_compatible_ewes):
-#         """Distribute ewes equally among available rams"""
-#         if not rams or not all_compatible_ewes:
-#             return {}
-        
-#         assignments = {}
-#         for ram in rams:
-#             assignments[ram.ear_tag_number] = []
-        
-#         # Simple round-robin distribution
-#         for i, ewe in enumerate(all_compatible_ewes):
-#             ram_index = i % len(rams)
-#             ram_id = rams[ram_index].ear_tag_number
-#             assignments[ram_id].append(ewe)
-        
-#         return assignments
-
-
-# *********************************************************************************************************
-# class BreedingTaskView(View):
-#     template_name = 'breeding_task.html'
-    
-#     def get(self, request):
-#         # Get selected rams from session
-#         selected_ram_ids = request.session.get('selected_rams', [])
-        
-#         if not selected_ram_ids:
-#             messages.warning(request, "Please select rams first")
-#             return redirect('breeding_selection')
-        
-#         try:
-#             # Get ram objects with capacity info
-#             rams = Sheep.objects.filter(ear_tag_number__in=selected_ram_ids)
-#             for ram in rams:
-#                 ram.capacity_info = get_ram_capacity_info(ram)
-            
-#             # Get ALL compatible ewes for all selected rams
-#             all_compatible_ewes = set()
-#             ram_compatible_ewes = {}
-            
-#             for ram in rams:
-#                 compatible_ewes = get_compatible_ewes(ram)
-#                 ram_compatible_ewes[ram.ear_tag_number] = compatible_ewes
-#                 all_compatible_ewes.update(compatible_ewes)
-            
-#             # Distribute ewes with breed priority and no duplicates
-#             distributed_assignments = distribute_ewes_by_priority(rams, list(all_compatible_ewes))
-            
-#             # Get unassigned ewes (incompatible + not assigned due to capacity/priority)
-#             assigned_ewes = set()
-#             for ewes in distributed_assignments.values():
-#                 assigned_ewes.update([ewe.ear_tag_number for ewe in ewes])
-            
-#             unassigned_ewes = Sheep.objects.filter(
-#                 sex='female',
-#                 type__in=['ewe', 'gimmer'],
-#                 is_healthy=True
-#             ).exclude(ear_tag_number__in=assigned_ewes)
-            
-#             # Prepare initial assignments for template
-#             import json
-#             initial_assignments = {}
-#             for ram_id, ewes in distributed_assignments.items():
-#                 initial_assignments[ram_id] = [ewe.ear_tag_number for ewe in ewes]
-            
-#             context = {
-#                 'rams': rams,
-#                 'distributed_assignments': distributed_assignments,
-#                 'unassigned_ewes': unassigned_ewes,
-#                 'ram_compatible_ewes': ram_compatible_ewes,
-#                 'initial_assignments_json': json.dumps(initial_assignments),
-#             }
-#             return render(request, self.template_name, context)
-            
-#         except Exception as e:
-#             print(f"Error in BreedingTaskView: {e}")
-#             messages.error(request, f"Error loading breeding task: {str(e)}")
-#             return redirect('breeding_selection')
-    
-#     def post(self, request):
-#         """Handle form submission"""
-#         try:
-#             breeding_assignments = json.loads(request.POST.get('breedingAssignments', '{}'))
-#         except json.JSONDecodeError:
-#             messages.error(request, "Invalid breeding assignments data")
-#             return redirect('breeding_task')
-        
-#         if not breeding_assignments:
-#             messages.error(request, "No breeding assignments provided")
-#             return redirect('breeding_task')
-        
-#         # Validate no duplicate ewes
-#         all_assigned_ewes = []
-#         for ewe_list in breeding_assignments.values():
-#             all_assigned_ewes.extend(ewe_list)
-        
-#         if len(all_assigned_ewes) != len(set(all_assigned_ewes)):
-#             messages.error(request, "Error: Some ewes are assigned to multiple rams")
-#             return redirect('breeding_task')
-        
-#         # Store in session
-#         request.session['breeding_assignments'] = breeding_assignments
-#         request.session.modified = True
-        
-#         return redirect('breeding_info')
-
-# ******************************************************************************************************************
-    
-# def breeding_task(request):
-#     # Get unassigned ewes
-#     unassigned_ewes = Sheep.objects.filter(
-#         sex='female',
-#         breeding_assignment__isnull=True,
-#         state__in=["SILENT", "FLASHING"]  # or whatever states are appropriate
-#     )
-    
-#     context = {
-#         'ewes': unassigned_ewes,
-#         'rams': Sheep.objects.filter(state="FLASHING"),  # or appropriate filter
-#         # ... other context variables
-#     }
-#     return render(request, 'breeding/breeding_task.html', context)
-# //////////////////////////////////
-    
-
-# class BreedingInfoView(View):
-#     template_name = 'breeding_info.html'
-    
-#     def get(self, request):
-#         # Get final assignments from session
-#         breeding_assignments = request.session.get('breeding_assignments', {})
-        
-#         if not breeding_assignments:
-#             messages.warning(request, "No breeding assignments found")
-#             return redirect('breeding_task')
-        
-#         # Prepare breeding information for display
-#         breeding_info = []
-#         for ram_id, ewe_ids in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                 ewes = Sheep.objects.filter(ear_tag_number__in=ewe_ids)
-                
-#                 for ewe in ewes:
-#                     breeding_info.append({
-#                         'ram': ram,
-#                         'ewe': ewe,
-#                         'start_date': date.today(),
-#                         'expected_birth_date': date.today() + timedelta(days=155),
-#                         'capacity_info': get_ram_capacity_info(ram)
-#                     })
-#             except Sheep.DoesNotExist:
-#                 continue
-        
-#         context = {
-#             'breeding_info': breeding_info
-#         }
-#         return render(request, self.template_name, context)
-    
-#     def post(self, request):
-#         """Handle final breeding plan creation"""
-#         breeding_assignments = json.loads(request.POST.get('breeding_assignments', '{}'))
-        
-#         if not breeding_assignments:
-#             messages.error(request, "No breeding assignments provided")
-#             return redirect('breeding_task')
-        
-#         # Store in session for confirmation page
-#         request.session['breeding_assignments'] = breeding_assignments
-        
-#         # Create breeding cycles
-#         created_count = 0
-#         for ram_id, ewe_ids in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                 for ewe_id in ewe_ids:
-#                     try:
-#                         ewe = Sheep.objects.get(ear_tag_number=ewe_id)
-                        
-#                         # Create breeding cycle
-#                         breeding_cycle = BreedingCycle.objects.create(
-#                             cycle_id=f"BC_{ram_id}_{ewe_id}_{date.today().strftime('%Y%m%d')}",
-#                             ewe=ewe,
-#                             ram=ram,
-#                             start_date=date.today(),
-#                             status='planned'
-#                         )
-#                         created_count += 1
-#                     except Sheep.DoesNotExist:
-#                         continue
-#             except Sheep.DoesNotExist:
-#                 continue
-        
-#         messages.success(request, f"Successfully created {created_count} breeding cycles")
-#         return redirect('breeding_info')    
-
-# **************************************************************************************************************************************************
-# class BreedingInfoView(View):
-#     template_name = 'breeding_info.html'
-    
-#     def get(self, request):
-#         # Get final assignments from session (for confirmation after POST)
-#         breeding_assignments = request.session.get('breeding_assignments', {})
-        
-#         if not breeding_assignments:
-#             messages.warning(request, "No breeding assignments found")
-#             return redirect('breeding_task')
-        
-#         # Prepare breeding information for display
-#         breeding_info = self._prepare_breeding_info(breeding_assignments)
-        
-#         context = {
-#             'breeding_info': breeding_info
-#         }
-#         return render(request, self.template_name, context)
-    
-#     def post(self, request):
-#         """Handle final breeding plan creation"""
-#         try:
-#             # Get assignments from POST data, not session
-#             breeding_assignments_json = request.POST.get('breedingAssignments', '{}')
-#             breeding_assignments = json.loads(breeding_assignments_json)
-            
-#             print(f"Received breeding assignments: {breeding_assignments}")  # Debug
-            
-#             if not breeding_assignments:
-#                 messages.error(request, "No breeding assignments provided")
-#                 return redirect('breeding_task')
-            
-#             # Store in session for confirmation page
-#             request.session['breeding_assignments'] = breeding_assignments
-            
-#             # Create breeding cycles
-#             created_count = self._create_breeding_cycles(breeding_assignments)
-            
-#             if created_count > 0:
-#                 messages.success(request, f"Successfully created {created_count} breeding cycles")
-#             else:
-#                 messages.warning(request, "No breeding cycles were created")
-                
-#             return redirect('breeding_info')
-            
-#         except json.JSONDecodeError as e:
-#             messages.error(request, f"Invalid data format: {str(e)}")
-#             return redirect('breeding_task')
-#         except Exception as e:
-#             messages.error(request, f"Error creating breeding cycles: {str(e)}")
-#             return redirect('breeding_task')
-    
-#     def _prepare_breeding_info(self, breeding_assignments):
-#         """Prepare breeding information for display"""
-#         breeding_info = []
-#         for ram_id, ewe_ids in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                 ewes = Sheep.objects.filter(ear_tag_number__in=ewe_ids)
-                
-#                 for ewe in ewes:
-#                     breeding_info.append({
-#                         'ram': ram,
-#                         'ewe': ewe,
-#                         'start_date': date.today(),
-#                         'expected_birth_date': date.today() + timedelta(days=155),
-#                         'capacity_info': get_ram_capacity_info(ram)
-#                     })
-#             except Sheep.DoesNotExist as e:
-#                 print(f"Sheep not found: {e}")  # Debug
-#                 continue
-        
-#         return breeding_info
-    
-#     def _create_breeding_cycles(self, breeding_assignments):
-#         """Create breeding cycles in database"""
-#         created_count = 0
-#         for ram_id, ewe_ids in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                 for ewe_id in ewe_ids:
-#                     try:
-#                         ewe = Sheep.objects.get(ear_tag_number=ewe_id)
-                        
-#                         # Check if breeding cycle already exists to avoid duplicates
-#                         existing_cycle = BreedingCycle.objects.filter(
-#                             ewe=ewe, 
-#                             ram=ram, 
-#                             start_date=date.today()
-#                         ).first()
-                        
-#                         if existing_cycle:
-#                             print(f"Breeding cycle already exists for {ewe_id} and {ram_id}")
-#                             continue
-                        
-#                         # Create breeding cycle
-#                         breeding_cycle = BreedingCycle.objects.create(
-#                             cycle_id=f"BC_{ram_id}_{ewe_id}_{date.today().strftime('%Y%m%d')}",
-#                             ewe=ewe,
-#                             ram=ram,
-#                             start_date=date.today(),
-#                             status='planned'
-#                         )
-#                         created_count += 1
-#                         print(f"Created breeding cycle: {breeding_cycle.cycle_id}")  # Debug
-                        
-#                     except Sheep.DoesNotExist:
-#                         print(f"Ewe not found: {ewe_id}")
-#                         continue
-#             except Sheep.DoesNotExist:
-#                 print(f"Ram not found: {ram_id}")
-#                 continue
-        
-#         return created_count
-
-# *****************************************************************************************
-# # sh_app/views.py
-# from django.shortcuts import render, redirect
-# from django.views.generic import TemplateView, View
-# from django.contrib import messages
-# from django.http import JsonResponse
-# import json
-# from datetime import date, timedelta
-# from .models import Sheep, BreedingCycle
-# from .services import get_available_rams, get_compatible_ewes, get_ram_capacity_info
-
-# # sh_app/views.py
-# class BreedingHomeView(TemplateView):
-#     template_name = 'sh_app/breeding_home.html'
-    
-#     def get_context_data(self, **kwargs):
-#         context = super().get_context_data(**kwargs)
-#         context['sheep_list'] = Sheep.objects.all()
-        
-#         # Add capacity info to rams
-#         rams = get_available_rams()
-#         for ram in rams:
-#             ram.capacity_info = get_ram_capacity_info(ram)
-#         context['rams'] = rams
-        
-#         print(f"DEBUG - Session keys in GET: {list(self.request.session.keys())}")
-#         print(f"DEBUG - Selected rams in session: {self.request.session.get('selected_rams', 'NOT FOUND')}")
-        
-#         return context
-    
-#     def post(self, request):
-#         """Handle ram selection from modal"""
-#         selected_rams = request.POST.getlist('rams')
-#         print(f"DEBUG BreedingHomeView POST - Selected rams: {selected_rams}")
-#         print(f"DEBUG - All POST data: {dict(request.POST)}")
-        
-#         if not selected_rams:
-#             messages.error(request, "Please select at least one ram")
-#             return redirect('breeding_home')
-        
-#         # Store selected rams in session
-#         request.session['selected_rams'] = selected_rams
-#         request.session.modified = True
-#         print(f"DEBUG - Session after setting: {request.session.get('selected_rams')}")
-#         print(f"DEBUG - All session data: {dict(request.session)}")
-        
-#         return redirect('breeding_task')
-    
-# # sh_app/views.py
-# from django.shortcuts import render, redirect
-# from django.views.generic import TemplateView, View
-# from django.contrib import messages
-# import json
-# from datetime import date, timedelta
-# from .models import Sheep, BreedingCycle
-# from .services import get_available_rams, get_compatible_ewes, get_ram_capacity_info
-
-# # sh_app/views.py
-# class BreedingTaskView(View):
-#     template_name = 'sh_app/breeding_task.html'
-    
-#     def get(self, request):
-#         # Get selected rams from session with debug
-#         selected_ram_ids = request.session.get('selected_rams', [])
-#         print(f"DEBUG BreedingTaskView GET - Session keys: {list(request.session.keys())}")
-#         print(f"DEBUG BreedingTaskView GET - Selected rams from session: {selected_ram_ids}")
-        
-#         if not selected_ram_ids:
-#             messages.warning(request, "Please select rams first")
-#             return redirect('breeding_home')
-        
-#         try:
-#             # Get ram objects
-#             rams = Sheep.objects.filter(ear_tag_number__in=selected_ram_ids)
-#             if not rams.exists():
-#                 messages.error(request, "Selected rams not found in database")
-#                 return redirect('breeding_home')
-                
-#             # Add capacity info
-#             for ram in rams:
-#                 ram.capacity_info = get_ram_capacity_info(ram)
-            
-#             # Get compatible ewes
-#             all_compatible_ewes = set()
-#             for ram in rams:
-#                 compatible_ewes = get_compatible_ewes(ram)
-#                 all_compatible_ewes.update(compatible_ewes)
-            
-#             # Distribute ewes
-#             distributed_assignments = self.distribute_ewes_equally(rams, list(all_compatible_ewes))
-            
-#             # Get unassigned ewes
-#             unassigned_ewes = Sheep.objects.filter(
-#                 sex='female',
-#                 type__in=['ewe', 'gimmer'],
-#                 is_healthy=True
-#             ).exclude(ear_tag_number__in=[ewe.ear_tag_number for ewe in all_compatible_ewes])
-            
-#             # Prepare JSON data
-#             import json
-#             initial_assignments_dict = {}
-#             for ram_ear, ewes in distributed_assignments.items():
-#                 initial_assignments_dict[ram_ear] = [
-#                     {"ear_tag": ewe.ear_tag_number, "breed": ewe.breed} 
-#                     for ewe in ewes
-#                 ]
-            
-#             context = {
-#                 'rams': rams,
-#                 'distributed_assignments': distributed_assignments,
-#                 'unassigned_ewes': unassigned_ewes,
-#                 'initial_assignments_json': json.dumps(initial_assignments_dict),
-#             }
-            
-#             print(f"DEBUG - Context prepared with {len(rams)} rams and {len(unassigned_ewes)} unassigned ewes")
-#             return render(request, self.template_name, context)
-            
-#         except Exception as e:
-#             print(f"ERROR in BreedingTaskView GET: {str(e)}")
-#             import traceback
-#             traceback.print_exc()
-#             messages.error(request, f"Error loading breeding task: {str(e)}")
-#             return redirect('breeding_home')
-    
-#     def post(self, request):
-#         """Handle form submission"""
-#         print(f"DEBUG BreedingTaskView POST - Session keys: {list(request.session.keys())}")
-#         print(f"DEBUG BreedingTaskView POST - Selected rams in session: {request.session.get('selected_rams')}")
-        
-#         # Get breeding assignments from form
-#         breeding_assignments_json = request.POST.get('breedingAssignments', '{}')
-#         print(f"DEBUG - Received breedingAssignments: {breeding_assignments_json}")
-        
-#         try:
-#             breeding_assignments = json.loads(breeding_assignments_json)
-#         except json.JSONDecodeError as e:
-#             print(f"ERROR - JSON decode error: {e}")
-#             messages.error(request, "Invalid breeding assignments data")
-#             return redirect('breeding_task')
-        
-#         if not breeding_assignments:
-#             messages.error(request, "No breeding assignments provided")
-#             return redirect('breeding_task')
-        
-#         # Validate we have assignments
-#         total_assignments = sum(len(ewes) for ewes in breeding_assignments.values())
-#         if total_assignments == 0:
-#             messages.error(request, "Please assign at least one ewe before proceeding")
-#             return redirect('breeding_task')
-        
-#         # Store in session
-#         request.session['breeding_assignments'] = breeding_assignments
-#         request.session.modified = True
-        
-#         print(f"DEBUG - Stored breeding assignments in session: {request.session.get('breeding_assignments')}")
-#         return redirect('breeding_info')
-    
-#     def distribute_ewes_equally(self, rams, all_compatible_ewes):
-#         """Distribute ewes equally among available rams"""
-#         if not rams or not all_compatible_ewes:
-#             return {}
-        
-#         assignments = {}
-#         for ram in rams:
-#             assignments[ram.ear_tag_number] = []
-        
-#         # Simple round-robin distribution
-#         for i, ewe in enumerate(all_compatible_ewes):
-#             ram_index = i % len(rams)
-#             ram_id = rams[ram_index].ear_tag_number
-#             assignments[ram_id].append(ewe)
-        
-#         return assignments
-
-# class BreedingInfoView(View):
-#     template_name = 'sh_app/breeding_info.html'
-    
-#     def get(self, request):
-#         # Get final assignments from session
-#         breeding_assignments = request.session.get('breeding_assignments', {})
-        
-#         if not breeding_assignments:
-#             messages.warning(request, "No breeding assignments found")
-#             return redirect('breeding_task')
-        
-#         # Prepare breeding information for display
-#         breeding_info = []
-#         for ram_id, ewe_ids in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                 ewes = Sheep.objects.filter(ear_tag_number__in=ewe_ids)
-                
-#                 for ewe in ewes:
-#                     breeding_info.append({
-#                         'ram': ram,
-#                         'ewe': ewe,
-#                         'start_date': date.today(),
-#                         'expected_birth_date': date.today() + timedelta(days=155),
-#                         'capacity_info': get_ram_capacity_info(ram)
-#                     })
-#             except Sheep.DoesNotExist:
-#                 continue
-        
-#         context = {
-#             'breeding_info': breeding_info
-#         }
-#         return render(request, self.template_name, context)
-    
-#     def post(self, request):
-#         """Handle final breeding plan creation"""
-#         breeding_assignments = json.loads(request.POST.get('breeding_assignments', '{}'))
-        
-#         if not breeding_assignments:
-#             messages.error(request, "No breeding assignments provided")
-#             return redirect('breeding_task')
-        
-#         # Validate no duplicate ewes
-#         all_assigned_ewes = []
-#         for ewe_list in breeding_assignments.values():
-#             all_assigned_ewes.extend(ewe_list)
-        
-#         if len(all_assigned_ewes) != len(set(all_assigned_ewes)):
-#             messages.error(request, "Error: Some ewes are assigned to multiple rams")
-#             return redirect('breeding_task')
-        
-#         # Store in session for confirmation page
-#         request.session['breeding_assignments'] = breeding_assignments
-        
-#         # Create breeding cycles
-#         created_count = 0
-#         for ram_id, ewe_ids in breeding_assignments.items():
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                 for ewe_id in ewe_ids:
-#                     try:
-#                         ewe = Sheep.objects.get(ear_tag_number=ewe_id)
-                        
-#                         # Create breeding cycle
-#                         breeding_cycle = BreedingCycle.objects.create(
-#                             cycle_id=f"BC_{ram_id}_{ewe_id}_{date.today().strftime('%Y%m%d')}",
-#                             ewe=ewe,
-#                             ram=ram,
-#                             start_date=date.today(),
-#                             status='planned'
-#                         )
-#                         created_count += 1
-#                     except Sheep.DoesNotExist:
-#                         continue
-#             except Sheep.DoesNotExist:
-#                 continue
-        
-#         messages.success(request, f"Successfully created {created_count} breeding cycles")
-#         return redirect('breeding_info')
-
-
-
-
-    
-# from django.shortcuts import render, redirect
-# from django.contrib.auth.decorators import login_required
-# from django.http import JsonResponse
-# from django.utils import timezone
-# from .models import Sheep, BreedingCycle
-# from .services import get_available_rams, get_available_ewes, get_compatible_ewes, check_breed_compatibility
-# import json
-
-# @login_required
-# def breeding_home(request):
-#     """Main breeding page showing all available sheep"""
-#     rams = get_available_rams()
-#     ewes = get_available_ewes()
-    
-#     context = {
-#         'rams': rams,
-#         'ewes': ewes,
-#         'total_sheep': len(rams) + len(ewes),
-#     }
-#     return render(request, 'breeding/breeding_home.html', context)
-
-# @login_required
-# def breeding_task(request):
-#     """Breeding task page with selected rams and compatible ewes"""
-#     selected_ram_ids = request.GET.getlist('selected_rams')
-    
-#     if not selected_ram_ids:
-#         messages.error(request, "No rams selected for breeding")
-#         return redirect('breeding_home')
-    
-#     selected_rams = []
-#     ram_data = []
-#     all_compatible_ewes = set()
-    
-#     for ram_id in selected_ram_ids:
-#         try:
-#             ram = Sheep.objects.get(ear_tag_number=ram_id)
-#             compatible_ewes = get_compatible_ewes(ram)
-            
-#             ram_data.append({
-#                 'ram': ram,
-#                 'compatible_ewes': compatible_ewes
-#             })
-#             selected_rams.append(ram)
-            
-#             for ewe in compatible_ewes:
-#                 all_compatible_ewes.add(ewe)
-                
-#         except Sheep.DoesNotExist:
-#             continue
-    
-#     # Get all available ewes for the incompatible list
-#     all_ewes = get_available_ewes()
-#     incompatible_ewes = [ewe for ewe in all_ewes if ewe not in all_compatible_ewes]
-    
-#     # Prepare data for template
-#     context = {
-#         'selected_rams': selected_rams,
-#         'ram_data': ram_data,
-#         'all_compatible_ewes': list(all_compatible_ewes),
-#         'incompatible_ewes': incompatible_ewes,
-#         'today': timezone.now().date(),  # Add current date for date inputs
-#     }
-#     return render(request, 'breeding/breeding_task.html', context)
-
-# @login_required
-# def breeding_task(request):
-#     """Breeding task page with selected rams and compatible ewes"""
-#     selected_ram_ids = request.GET.getlist('selected_rams')
-    
-#     if not selected_ram_ids:
-#         messages.error(request, "No rams selected for breeding")
-#         return redirect('breeding_home')  # Fixed: removed namespace
-    
-#     selected_rams = []
-#     ram_data = []
-#     all_compatible_ewes = set()
-    
-#     for ram_id in selected_ram_ids:
-#         try:
-#             ram = Sheep.objects.get(ear_tag_number=ram_id)
-#             compatible_ewes = get_compatible_ewes(ram)
-            
-#             ram_data.append({
-#                 'ram': ram,
-#                 'compatible_ewes': compatible_ewes
-#             })
-#             selected_rams.append(ram)
-            
-#             for ewe in compatible_ewes:
-#                 all_compatible_ewes.add(ewe)
-                
-#         except Sheep.DoesNotExist:
-#             messages.warning(request, f"Ram with ID {ram_id} not found")
-#             continue
-    
-#     # Get all available ewes for the incompatible list
-#     all_ewes = get_available_ewes()
-#     incompatible_ewes = [ewe for ewe in all_ewes if ewe not in all_compatible_ewes]
-    
-#     # Prepare data for template
-#     context = {
-#         'selected_rams': selected_rams,
-#         'ram_data': ram_data,
-#         'all_compatible_ewes': list(all_compatible_ewes),
-#         'incompatible_ewes': incompatible_ewes,
-#         'today': timezone.now().date(),  # Add current date for date inputs
-#     }
-#     return render(request, 'breeding/breeding_task.html', context)
-
-# @login_required
-# def breeding_info(request):
-#     """Breeding information page with final planning"""
-#     if request.method == 'POST':
-#         selected_pairs = json.loads(request.POST.get('selected_pairs', '[]'))
-        
-#         breeding_data = []
-#         for pair in selected_pairs:
-#             try:
-#                 ram = Sheep.objects.get(ear_tag_number=pair['ram_id'])
-#                 ewe = Sheep.objects.get(ear_tag_number=pair['ewe_id'])
-                
-#                 from .services import predict_lamb_breed
-#                 lamb_breed, lamb_breed_level = predict_lamb_breed(ewe, ram)
-                
-#                 breeding_data.append({
-#                     'ram': ram,
-#                     'ewe': ewe,
-#                     'lamb_breed': lamb_breed,
-#                     'lamb_breed_level': lamb_breed_level,
-#                     'start_date': pair.get('start_date', ''),
-#                 })
-#             except Sheep.DoesNotExist:
-#                 continue
-        
-#         context = {
-#             'breeding_data': breeding_data,
-#         }
-#         return render(request, 'breeding/breeding_info.html', context)
-    
-#     return redirect('breeding:breeding_task')
-
-# @login_required
-# def breeding_info(request):
-#     """Breeding information page with final planning"""
-#     if request.method == 'POST':
-#         try:
-#             # Get the selected pairs data
-#             selected_pairs_json = request.POST.get('selected_pairs', '[]')
-            
-#             # Parse the JSON data
-#             selected_pairs = json.loads(selected_pairs_json)
-            
-#             # Validate that selected_pairs is a list
-#             if not isinstance(selected_pairs, list):
-#                 messages.error(request, "Invalid data format for selected pairs")
-#                 return redirect('breeding_task')
-            
-#             breeding_data = []
-#             for pair in selected_pairs:
-#                 # Validate that pair is a dictionary
-#                 if not isinstance(pair, dict):
-#                     continue
-                    
-#                 try:
-#                     ram_id = pair.get('ram_id')
-#                     ewe_id = pair.get('ewe_id')
-                    
-#                     if not ram_id or not ewe_id:
-#                         continue
-                    
-#                     ram = Sheep.objects.get(ear_tag_number=ram_id)
-#                     ewe = Sheep.objects.get(ear_tag_number=ewe_id)
-                    
-#                     # Predict lamb breed
-#                     lamb_breed, lamb_breed_level = predict_lamb_breed(ewe, ram)
-                    
-#                     breeding_data.append({
-#                         'ram': ram,
-#                         'ewe': ewe,
-#                         'lamb_breed': lamb_breed,
-#                         'lamb_breed_level': lamb_breed_level,
-#                         'start_date': pair.get('start_date', ''),
-#                     })
-#                 except Sheep.DoesNotExist:
-#                     messages.warning(request, f"One or more sheep not found: Ram {ram_id}, Ewe {ewe_id}")
-#                     continue
-#                 except KeyError as e:
-#                     messages.warning(request, f"Missing data in pair: {e}")
-#                     continue
-            
-#             if not breeding_data:
-#                 messages.error(request, "No valid breeding pairs found in the submitted data")
-#                 return redirect('breeding_task')
-            
-#             context = {
-#                 'breeding_data': breeding_data,
-#             }
-#             return render(request, 'breeding/breeding_info.html', context)
-            
-#         except json.JSONDecodeError as e:
-#             messages.error(request, f"Invalid JSON data: {str(e)}")
-#             return redirect('breeding_task')
-#         except Exception as e:
-#             messages.error(request, f"Error processing breeding data: {str(e)}")
-#             return redirect('breeding_task')
-    
-#     # If not POST, redirect to breeding task
-#     return redirect('breeding_task')
-
-# *******************************************************************************************************************
-# @login_required
-# def create_breeding_cycle(request):
-#     if request.method == 'POST':
-#         try:
-#             data = json.loads(request.body)
-#             breeding_cycles = data.get('breeding_cycles', [])
-#             created_cycles = []
-
-#             for cycle_data in breeding_cycles:
-#                 ewe_id = cycle_data.get('ewe_id')
-#                 ram_id = cycle_data.get('ram_id')
-#                 start_date_str = cycle_data.get('start_date')
-
-#                 start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-#                 ewe = Sheep.objects.get(ear_tag_number=ewe_id)
-#                 ram = Sheep.objects.get(ear_tag_number=ram_id)
-
-#                 breeding_cycle = BreedingCycle(
-#                     ewe=ewe,
-#                     ram=ram,
-#                     start_date=start_date,
-#                     created_by=request.user
-#                 )
-#                 breeding_cycle.save()
-#                 created_cycles.append(breeding_cycle.cycle_id)
-
-#             return JsonResponse({
-#                 'success': True,
-#                 'message': f'Successfully created {len(created_cycles)} breeding cycles',
-#                 'cycle_ids': created_cycles
-#             })
-
-#         except Exception as e:
-#             return JsonResponse({'success': False, 'message': str(e)})
-
-#     return JsonResponse({'success': False, 'message': 'Invalid request method'})
-
-# /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-# @login_required
-# def breeding_selection(request):
-#     """Main breeding selection view with breed compatibility"""
-#     rams = get_available_rams()
-#     ewes = get_available_ewes()
-    
-#     selected_ram_id = request.GET.get('ram_id')
-#     selected_ram = None
-#     compatible_ewes = []
-#     breed_compatibility_info = None
-#     incompatible_ewes_info = []
-    
-#     if selected_ram_id:
-#         try:
-#             selected_ram = Sheep.objects.get(ear_tag_number=selected_ram_id)
-#             compatible_ewes = get_compatible_ewes(selected_ram)
-#             breed_compatibility_info = get_breed_compatibility_info(selected_ram)
-            
-#             # Get information about incompatible ewes for debugging
-#             all_ewes = get_available_ewes()
-#             for ewe in all_ewes:
-#                 if ewe not in compatible_ewes:
-#                     # Check if it's due to breed or family
-#                     breed_ok = check_breed_compatibility(selected_ram, ewe)
-#                     family_ok = check_for_inbreeding(ewe, selected_ram)
-                    
-#                     if not breed_ok:
-#                         incompatible_ewes_info.append({
-#                             'ewe': ewe.ear_tag_number,
-#                             'breed': ewe.breed,
-#                             'reason': f"Breed incompatibility: {selected_ram.breed} ram cannot mate with {ewe.breed} ewe"
-#                         })
-#                     elif not family_ok:
-#                         relationships = get_family_relationship(ewe, selected_ram)
-#                         incompatible_ewes_info.append({
-#                             'ewe': ewe.ear_tag_number,
-#                             'breed': ewe.breed,
-#                             'reason': f"Family relationship: {', '.join(relationships)}"
-#                         })
-            
-#         except Sheep.DoesNotExist:
-#             pass
-    
-#     context = {
-#         'rams': rams,
-#         'ewes': ewes,
-#         'selected_ram': selected_ram,
-#         'compatible_ewes': compatible_ewes,
-#         'breed_compatibility_info': breed_compatibility_info,
-#         'incompatible_ewes_info': incompatible_ewes_info,
-#     }
-    
-#     return render(request, 'breeding.html', context)
-
-# # @login_required
-# # def create_breeding_cycle(request):
-# #     """Handle breeding cycle creation with breed prediction"""
-# #     if request.method == 'POST':
-# #         try:
-# #             data = json.loads(request.body)
-# #             ewe_id = data.get('ewe_id')
-# #             ram_id = data.get('ram_id')
-# #             start_date = data.get('start_date')
-            
-# #             ewe = Sheep.objects.get(ear_tag_number=ewe_id)
-# #             ram = Sheep.objects.get(ear_tag_number=ram_id)
-            
-# #             # Double-check breed compatibility
-# #             from .services import check_breed_compatibility
-# #             if not check_breed_compatibility(ram, ewe):
-# #                 return JsonResponse({
-# #                     'success': False,
-# #                     'message': f'Breed incompatibility: {ram.breed} ram cannot mate with {ewe.breed} ewe'
-# #                 })
-            
-# #             # Double-check inbreeding prevention
-# #             from .services import check_for_inbreeding
-# #             if not check_for_inbreeding(ewe, ram):
-# #                 relationships = get_family_relationship(ewe, ram)
-# #                 return JsonResponse({
-# #                     'success': False,
-# #                     'message': f'Breeding not allowed: {", ".join(relationships)}'
-# #                 })
-            
-# #             # Predict lamb breed
-# #             lamb_breed, lamb_breed_level = predict_lamb_breed(ewe, ram)
-            
-# #             # Create breeding cycle
-# #             breeding_cycle = BreedingCycle(
-# #                 ewe=ewe,
-# #                 ram=ram,
-# #                 start_date=start_date,
-# #                 created_by=request.user
-# #             )
-# #             breeding_cycle.save()
-            
-# #             # Add breed prediction to response
-# #             breed_prediction_msg = ""
-# #             if lamb_breed and lamb_breed_level:
-# #                 breed_prediction_msg = f" Predicted lamb: {lamb_breed} ({lamb_breed_level}%)"
-# #             else:
-# #                 breed_prediction_msg = " Lamb breed requires manual assignment."
-            
-# #             return JsonResponse({
-# #                 'success': True,
-# #                 'message': f'Breeding cycle created successfully! Expected birth: {breeding_cycle.expected_birth_date}.{breed_prediction_msg}'
-# #             })
-            
-# #         except Exception as e:
-# #             return JsonResponse({
-# #                 'success': False,
-# #                 'message': str(e)
-# #             })
-    
-# #     return JsonResponse({'success': False, 'message': 'Invalid request method'})
-
-# @login_required
-# def create_breeding_cycle(request):
-#     """Handle breeding cycle creation with breed prediction"""
-#     if request.method == 'POST':
-#         try:
-#             data = json.loads(request.body)
-#             ewe_id = data.get('ewe_id')
-#             ram_id = data.get('ram_id')
-#             start_date_str = data.get('start_date')
-            
-#             # Convert string date to date object
-#             try:
-#                 start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-#             except (ValueError, TypeError):
-#                 return JsonResponse({
-#                     'success': False,
-#                     'message': 'Invalid date format. Please use YYYY-MM-DD.'
-#                 })
-            
-#             # Validate that start date is not in the past
-#             if start_date < timezone.now().date():
-#                 return JsonResponse({
-#                     'success': False,
-#                     'message': 'Start date cannot be in the past.'
-#                 })
-            
-#             # Get the sheep objects
-#             ewe = Sheep.objects.get(ear_tag_number=ewe_id)
-#             ram = Sheep.objects.get(ear_tag_number=ram_id)
-            
-#             # Double-check breed compatibility
-#             if not check_breed_compatibility(ram, ewe):
-#                 return JsonResponse({
-#                     'success': False,
-#                     'message': f'Breed incompatibility: {ram.breed} ram cannot mate with {ewe.breed} ewe'
-#                 })
-            
-#             # Double-check inbreeding prevention
-#             if not check_for_inbreeding(ewe, ram):
-#                 relationships = get_family_relationship(ewe, ram)
-#                 return JsonResponse({
-#                     'success': False,
-#                     'message': f'Breeding not allowed: {", ".join(relationships)}'
-#                 })
-            
-#             # Check ram capacity
-#             if not check_ram_capacity(ram, start_date):
-#                 return JsonResponse({
-#                     'success': False,
-#                     'message': f'Ram has exceeded breeding capacity for this season'
-#                 })
-            
-#             # Predict lamb breed
-#             lamb_breed, lamb_breed_level = predict_lamb_breed(ewe, ram)
-            
-#             # Create breeding cycle with proper date object
-#             breeding_cycle = BreedingCycle(
-#                 ewe=ewe,
-#                 ram=ram,
-#                 start_date=start_date,  # This is now a date object
-#                 created_by=request.user
-#             )
-#             breeding_cycle.save()
-            
-#             # Add breed prediction to response
-#             breed_prediction_msg = ""
-#             if lamb_breed and lamb_breed_level:
-#                 breed_prediction_msg = f" Predicted lamb: {lamb_breed} ({lamb_breed_level}%)"
-#             else:
-#                 breed_prediction_msg = " Lamb breed requires manual assignment."
-            
-#             return JsonResponse({
-#                 'success': True,
-#                 'message': f'Breeding cycle created successfully! Expected birth: {breeding_cycle.expected_birth_date}.{breed_prediction_msg}'
-#             })
-            
-#         except Sheep.DoesNotExist:
-#             return JsonResponse({
-#                 'success': False,
-#                 'message': 'Sheep not found'
-#             })
-#         except Exception as e:
-#             return JsonResponse({
-#                 'success': False,
-#                 'message': f'Error: {str(e)}'
-#             })
-    
-#     return JsonResponse({'success': False, 'message': 'Invalid request method'})
-
-# @login_required
-# def get_compatible_ewes_ajax(request, ram_id):
-#     """AJAX endpoint to get compatible ewes for selected ram"""
-#     try:
-#         ram = Sheep.objects.get(ear_tag_number=ram_id)
-#         compatible_ewes = get_compatible_ewes(ram)
-#         breed_compatibility_info = get_breed_compatibility_info(ram)
-        
-#         ewes_data = []
-#         for ewe in compatible_ewes:
-#             # Predict lamb breed for each compatible ewe
-#             lamb_breed, lamb_breed_level = predict_lamb_breed(ewe, ram)
-            
-#             ewes_data.append({
-#                 'ear_tag_number': ewe.ear_tag_number,
-#                 'breed': ewe.breed,
-#                 'breed_level': ewe.breed_level,
-#                 'type': ewe.type,
-#                 'age_days': (timezone.now().date() - ewe.date_of_birth).days if ewe.date_of_birth else 'Unknown',
-#                 'predicted_lamb_breed': lamb_breed,
-#                 'predicted_lamb_level': lamb_breed_level
-#             })
-        
-#         return JsonResponse({
-#             'success': True,
-#             'compatible_ewes': ewes_data,
-#             'total_compatible': len(compatible_ewes),
-#             'breed_compatibility_info': breed_compatibility_info
-#         })
-#     except Sheep.DoesNotExist:
-#         return JsonResponse({
-#             'success': False,
-#             'message': 'Ram not found'
-#         })
-    
-
-
-# # ////////////////////////////////////////////////////////////////////////////////////////
-
-# class BreedingCycleListView(ListView):
-#     model = BreedingCycle
-#     template_name = 'breeding_cycle_list.html'
-#     context_object_name = 'cycles'
-#     paginate_by = 20
-    
-#     def get_queryset(self):
-#         queryset = BreedingCycle.objects.select_related('ewe', 'ram').all()
-        
-#         # Filtering
-#         status_filter = self.request.GET.get('status')
-#         if status_filter:
-#             queryset = queryset.filter(status=status_filter)
-        
-#         # Search
-#         search_query = self.request.GET.get('search')
-#         if search_query:
-#             queryset = queryset.filter(
-#                 Q(cycle_id__icontains=search_query) |
-#                 Q(ewe__ear_tag_number__icontains=search_query) |
-#                 Q(ram__ear_tag_number__icontains=search_query)
-#             )
-        
-#         # Sorting
-#         sort_by = self.request.GET.get('sort', '-start_date')
-#         return queryset.order_by(sort_by)
-    
-#     def get_context_data(self, **kwargs):
-#         context = super().get_context_data(**kwargs)
-#         context['status_choices'] = BreedingCycle.STATUS_CHOICES
-#         context['current_filters'] = {
-#             'status': self.request.GET.get('status', ''),
-#             'search': self.request.GET.get('search', ''),
-#         }
-#         return context
-
-# class BreedingCycleDetailView(DetailView):
-#     model = BreedingCycle
-#     template_name = 'breeding_cycle_detail.html'
-#     context_object_name = 'cycle'
-    
-#     def get_context_data(self, **kwargs):
-#         context = super().get_context_data(**kwargs)
-#         cycle = self.get_object()
-        
-#         # Get lambs from this cycle
-#         context['lambs'] = Sheep.objects.filter(
-#             parent_ewe=cycle.ewe,
-#             parent_ram=cycle.ram,
-#             date_of_birth=cycle.actual_birth_date
-#         )
-        
-#         # Get related records
-#         context['audit_logs'] = AuditLog.objects.filter(
-#             entity='BreedingCycle',
-#             entity_id=cycle.cycle_id
-#         ).order_by('-timestamp')[:10]
-        
-#         return context
-
-# class BreedingCycleCreateView(CreateView):
-#     model = BreedingCycle
-#     template_name = 'breeding_cycle_form.html'
-#     fields = ['ewe', 'ram', 'start_date', 'notes']
-    
-#     def form_valid(self, form):
-#         # Generate cycle ID
-#         form.instance.cycle_id = f"CYCLE_{timezone.now().strftime('%Y%m%d%H%M%S')}"
-        
-#         # Validate breeding pair
-#         ewe = form.cleaned_data['ewe']
-#         ram = form.cleaned_data['ram']
-        
-#         # Check if both are healthy
-#         if not ewe.is_healthy or not ram.is_healthy:
-#             form.add_error(None, "Both ewe and ram must be healthy for breeding")
-#             return self.form_invalid(form)
-        
-#         # Check ram capacity
-#         from .services import check_ram_capacity
-#         capacity_ok, message = check_ram_capacity(ram)
-#         if not capacity_ok:
-#             form.add_error('ram', message)
-#             return self.form_invalid(form)
-        
-#         # Check inbreeding prevention
-#         from .services import check_inbreeding
-#         inbreeding_ok, relationship = check_inbreeding(ewe, ram)
-#         if not inbreeding_ok:
-#             form.add_error(None, f"Inbreeding prevention: {relationship} relationship detected")
-#             return self.form_invalid(form)
-        
-#         response = super().form_valid(form)
-        
-#         # Log the creation
-#         AuditLog.objects.create(
-#             user_id=self.request.user.username,
-#             action='CREATE_BREEDING_CYCLE',
-#             entity='BreedingCycle',
-#             entity_id=form.instance.cycle_id,
-#             new_values={
-#                 'ewe': ewe.ear_tag_number,
-#                 'ram': ram.ear_tag_number,
-#                 'start_date': form.instance.start_date.isoformat(),
-#                 'status': form.instance.status
-#             }
-#         )
-        
-#         return response
-    
-#     def get_success_url(self):
-#         return reverse_lazy('breeding_cycle_detail', kwargs={'pk': self.object.cycle_id})
-
-# class BreedingCycleUpdateView(UpdateView):
-#     model = BreedingCycle
-#     template_name = 'breeding_cycle_form.html'
-#     fields = ['status', 'actual_birth_date', 'cancellation_reason', 'notes']
-    
-#     def form_valid(self, form):
-#         old_status = self.get_object().status
-#         old_birth_date = self.get_object().actual_birth_date
-        
-#         response = super().form_valid(form)
-        
-#         # Log status changes
-#         if old_status != form.instance.status:
-#             AuditLog.objects.create(
-#                 user_id=self.request.user.username,
-#                 action='UPDATE_BREEDING_CYCLE_STATUS',
-#                 entity='BreedingCycle',
-#                 entity_id=form.instance.cycle_id,
-#                 old_values={'status': old_status},
-#                 new_values={'status': form.instance.status},
-#                 notes=form.instance.cancellation_reason if form.instance.status == 'CANCELLED' else ''
-#             )
-        
-#         # Log birth date recording
-#         if not old_birth_date and form.instance.actual_birth_date:
-#             AuditLog.objects.create(
-#                 user_id=self.request.user.username,
-#                 action='RECORD_BIRTH_DATE',
-#                 entity='BreedingCycle',
-#                 entity_id=form.instance.cycle_id,
-#                 new_values={'actual_birth_date': form.instance.actual_birth_date.isoformat()}
-#             )
-        
-#         return response
-    
-#     def get_success_url(self):
-#         return reverse_lazy('breeding_cycle_detail', kwargs={'pk': self.object.cycle_id})
-
-# class BreedingDashboardView(TemplateView):
-#     template_name = 'breeding_dashboard.html'
-    
-#     def get_context_data(self, **kwargs):
-#         context = super().get_context_data(**kwargs)
-#         today = timezone.now().date()
-        
-#         # Active cycles
-#         context['active_cycles'] = BreedingCycle.objects.filter(
-#             status__in=['PLANNED', 'IN_PROGRESS']
-#         ).select_related('ewe', 'ram').order_by('expected_birth_date')
-        
-#         # Upcoming births (next 30 days)
-#         context['upcoming_births'] = BreedingCycle.objects.filter(
-#             status='IN_PROGRESS',
-#             expected_birth_date__range=[today, today + timedelta(days=30)]
-#         ).select_related('ewe', 'ram')
-        
-#         # Overdue births
-#         context['overdue_births'] = BreedingCycle.objects.filter(
-#             status='IN_PROGRESS',
-#             expected_birth_date__lt=today
-#         ).select_related('ewe', 'ram')
-        
-#         # Statistics
-#         context['total_cycles'] = BreedingCycle.objects.count()
-#         context['completed_cycles'] = BreedingCycle.objects.filter(status='COMPLETED').count()
-#         context['success_rate'] = (
-#             (context['completed_cycles'] / context['total_cycles'] * 100) 
-#             if context['total_cycles'] > 0 else 0
-#         )
-        
-#         # Ram utilization
-#         rams = Sheep.objects.filter(sex='MALE', type__in=['RAM', 'YOUNG_RAM'])
-#         ram_utilization = []
-#         for ram in rams:
-#             active_cycles = BreedingCycle.objects.filter(
-#                 ram=ram, 
-#                 status__in=['PLANNED', 'IN_PROGRESS']
-#             ).count()
-#             capacity = 55 if ram.breed == 'PD' else 40
-#             utilization = (active_cycles / capacity * 100) if capacity > 0 else 0
-#             ram_utilization.append({
-#                 'ram': ram,
-#                 'active_cycles': active_cycles,
-#                 'capacity': capacity,
-#                 'utilization': utilization,
-#                 'is_over_capacity': active_cycles > capacity
-#             })
-        
-#         context['ram_utilization'] = ram_utilization
-        
-#         # Breed distribution forecast
-#         active_with_breed = BreedingCycle.objects.filter(
-#             status__in=['PLANNED', 'IN_PROGRESS']
-#         ).select_related('ewe', 'ram')
-        
-#         breed_forecast = {}
-#         for cycle in active_with_breed:
-#             lamb_breed, _ = predict_lamb_breed(cycle.ewe, cycle.ram)
-#             breed_forecast[lamb_breed] = breed_forecast.get(lamb_breed, 0) + 1
-        
-#         context['breed_forecast'] = breed_forecast
-        
-#         return context
