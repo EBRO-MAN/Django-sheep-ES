@@ -1,32 +1,47 @@
-from urllib import request
-from django.contrib.auth import authenticate, login, logout
-from django.contrib import messages
-
-from django.shortcuts import get_object_or_404, render, redirect
-from django.contrib.auth.decorators import login_required
-from django.utils import timezone
-
-import datetime
-from datetime import date, timedelta
-from django.http import JsonResponse
-from .models import Sheep, BreedingCycle, AuditLog
-from .services1 import (get_available_rams, get_available_lambs,get_available_ewes, get_available_gimmers,get_available_young_rams, get_compatible_ewes, get_ram_capacity_info, 
-                      get_family_relationship, distribute_ewes_by_priority, check_breed_compatibility, check_for_inbreeding,
-                      predict_lamb_breed, get_breed_compatibility_info, )
-
+import csv
+import io
 import json
+import logging
+import datetime
+from datetime import date, datetime, timedelta
+
+from urllib import request
+
+from django.contrib import messages
+from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.db import transaction
+from django.db.models import Q, Count, Avg
+from django.http import JsonResponse, HttpResponse
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse_lazy
+from django.utils import timezone
 from django.views.decorators.http import require_POST
-
-
+from django.views.generic import (
+    View, TemplateView, ListView, DetailView, CreateView, UpdateView
+)
 
 from .decorators import allowed_users
-import logging
-
+from .form import (
+    CullingForm, MortalityForm, DistributionForm, SheepForm,
+    CSVImportForm, AddRecordForm
+)
+from .models import (
+    Sheep, BreedingCycle, AuditLog, User,
+    CullingRecord, MortalityRecord, DistributionRecord
+)
+from .services1 import (
+    get_available_rams, get_available_lambs, get_available_ewes,
+    get_available_gimmers, get_available_young_rams, get_compatible_ewes,
+    get_ram_capacity_info, get_family_relationship,
+    distribute_ewes_by_priority, check_breed_compatibility,
+    check_for_inbreeding, predict_lamb_breed,
+    get_breed_compatibility_info
+)
 
 logger = logging.getLogger(__name__)
-
-# --- BREEDING FLOW VIEWS ---
 
 @login_required
 @allowed_users(allowed_roles=['Breeder',])
@@ -96,35 +111,10 @@ def process_assignment(request):
     # 3. Redirect to the detailed assignment/task view
     return redirect('breeding_task')
 
-# views.py (Add these imports and the function)
-
-import csv
-import io
-from datetime import datetime
-from django.shortcuts import render, redirect
-from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-# from .form import CSVImportForm
-from .models import Sheep
 
 
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib import messages
-from .models import Sheep, CullingRecord, MortalityRecord, DistributionRecord
-from .form import CullingForm, MortalityForm, DistributionForm, SheepForm
 
 
-# views.py
-
-from django.shortcuts import render
-# Ensure these models are imported
-from .models import CullingRecord, MortalityRecord, DistributionRecord
-
-
-# views.py
-
-from django.views.decorators.http import require_POST
-# ... existing imports ...
 
 @require_POST
 def bulk_flash_rams(request):
@@ -452,34 +442,9 @@ def import_sheep_csv(request):
 
 
 
-import csv
-import io
-from datetime import datetime
-from django.contrib import messages
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
-from django.http import HttpResponse
 
 
 
-
-from django.shortcuts import render, redirect
-
-from django.contrib.auth.decorators import login_required
-from django.db import transaction
-from django.core.exceptions import ValidationError
-from .models import Sheep, AuditLog, User
-from .form import CSVImportForm, AddRecordForm
-
-
-
-
-from django.views.generic import TemplateView, View
-from django.views.generic import ListView, DetailView, CreateView, UpdateView, TemplateView
-from django.urls import reverse_lazy
-from django.db.models import Q, Count, Avg
-from datetime import timedelta
-from datetime import date
 
 
 def home(request):
@@ -674,10 +639,7 @@ def breed_sheep_state(request):
 
 
 
-from django.views.decorators.http import require_POST
 
-
-# 1. NEW VIEW: Handle the initial Ram selection from breeding.html
 @login_required
 @require_POST
 def process_ram_selection(request):
@@ -828,7 +790,7 @@ class BreedingTaskView(View):
 
 
 
-from django.db import transaction # Ensure this is imported
+
 
 
 class BreedingInfoView(View):
@@ -959,10 +921,7 @@ class BreedingInfoView(View):
         
 
 
-from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger # Import Paginator
-from django.shortcuts import render
-from django.views.generic import View
-from .models import BreedingCycle
+
 
 class BreedingHistoryView(View):
     template_name = 'breeding_history.html'
